@@ -1,0 +1,434 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Rekap Lembar Jawaban</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+/* Layout: satu kolom, empat langkah (jumlah soal, daftar siswa, pilih nomor lalu huruf jawaban, tabel + unduh) */
+:root {
+  --bg: #F2F5F3;
+  --surface: #FFFFFF;
+  --fg: #16231E;
+  --muted: #5B6B64;
+  --line: #D5DDD8;
+  --accent: #1E6B52;
+  --accent-fg: #FFFFFF;
+  --accent-soft: #DCEBE4;
+  --warn-bg: #FBF0D2;
+  --warn-fg: #7A5A06;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101714; --surface: #17211C; --fg: #E6EEE9; --muted: #9AAAA2; --line: #2B3A33;
+    --accent: #58C49B; --accent-fg: #0B1712; --accent-soft: #1F3A2F;
+    --warn-bg: #3F3316; --warn-fg: #EBCB7A; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101714; --surface: #17211C; --fg: #E6EEE9; --muted: #9AAAA2; --line: #2B3A33;
+  --accent: #58C49B; --accent-fg: #0B1712; --accent-soft: #1F3A2F;
+  --warn-bg: #3F3316; --warn-fg: #EBCB7A; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-block: 20px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1, h2 { font-family: var(--font-display); margin: 0; text-wrap: balance; }
+h1 { font-size: 26px; line-height: 1.15; font-weight: 700; }
+h2 { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+.lead { margin: 6px 0 0; color: var(--muted); max-width: 60ch; }
+.step { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); font-size: 13px; font-weight: 600; flex: none; }
+section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+label.lbl { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.grid { display: grid; gap: 14px; grid-template-columns: 1fr 90px; }
+@media (min-width: 640px) { .grid { grid-template-columns: 1.6fr 100px auto; align-items: end; } }
+input.in, select.in {
+  width: 100%; font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 6px; padding: 10px 12px; min-height: 44px;
+}
+input.in.mono { font-variant-numeric: tabular-nums; letter-spacing: .12em; text-transform: uppercase; }
+input.in::placeholder { color: var(--muted); opacity: .8; text-transform: none; letter-spacing: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
+.btn {
+  font: inherit; font-weight: 600; min-height: 44px; padding: 0 18px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg); display: inline-flex; align-items: center; justify-content: center;
+}
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 6px; }
+.chip {
+  font: inherit; min-height: 50px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15; cursor: pointer; padding: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.chip .cn { font-size: 11px; color: var(--muted); }
+.chip .cl { font-size: 17px; font-weight: 700; }
+.chip.done { background: var(--accent-soft); }
+.chip.on { border: 2px solid var(--accent); }
+.chip.on .cn { color: var(--accent); font-weight: 600; }
+.pick { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.pick button {
+  font: inherit; font-family: var(--font-display); font-size: 22px; font-weight: 700; min-height: 56px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg);
+}
+.pick button.blank { grid-column: 1 / -1; min-height: 40px; font-size: 14px; background: var(--surface); color: var(--fg); border-color: var(--line); font-family: var(--font-body); font-weight: 600; }
+.info { font-size: 14px; font-weight: 500; margin: 0; }
+details { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 10px 12px; }
+summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+details .inner { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 3px; border-bottom: 1px solid var(--line); text-align: center; vertical-align: middle; background: var(--surface); }
+th { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .03em; }
+tbody tr:last-child td { border-bottom: 0; }
+.c-no { width: 36px; color: var(--muted); font-size: 13px; }
+.c-name { position: sticky; left: 0; z-index: 2; text-align: left; min-width: 160px; max-width: 160px; padding: 4px 6px; border-right: 1px solid var(--line); }
+.c-kelas { width: 58px; }
+.c-ans { width: 40px; }
+.c-act { width: 40px; }
+tr.sel td { background: var(--accent-soft); }
+input.txt { width: 100%; font: inherit; font-size: 14px; color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 6px; min-height: 34px; }
+input.txt.k { text-align: center; }
+input.txt:hover, input.txt:focus { border-color: var(--line); }
+input.ans { width: 34px; height: 34px; text-align: center; font: inherit; font-weight: 600; text-transform: uppercase; color: var(--fg); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 0; }
+input.ans:hover, input.ans:focus { border-color: var(--line); }
+input.ans.empty { background: var(--warn-bg); border: 1px dashed var(--warn-fg); }
+.xbtn { width: 32px; height: 32px; border: 0; background: transparent; color: var(--muted); border-radius: 4px; cursor: pointer; font-size: 18px; line-height: 1; }
+.xbtn:hover { color: var(--fg); background: var(--accent-soft); }
+.empty-msg { padding: 18px; color: var(--muted); }
+.status-line { min-height: 20px; font-size: 14px; color: var(--muted); }
+textarea.copybox { width: 100%; min-height: 120px; font: 12px/1.4 ui-monospace, monospace; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Rekap Lembar Jawaban</h1>
+    <p class="lead">Tambah siswa, pilih nomor soal yang mau diisi, ketuk huruf jawabannya. Semuanya jadi satu tabel yang bisa diunduh sebagai Excel.</p>
+  </header>
+
+  <section aria-labelledby="h1s">
+    <h2 id="h1s"><span class="step">1</span>Jumlah soal</h2>
+    <div class="field" style="max-width:140px">
+      <label class="lbl" for="n">Banyak nomor</label>
+      <input class="in" id="n" type="number" inputmode="numeric" min="1" max="60" value="30">
+    </div>
+  </section>
+
+  <section aria-labelledby="h2s">
+    <h2 id="h2s"><span class="step">2</span>Tambah siswa</h2>
+    <form id="form" autocomplete="off">
+      <div class="grid">
+        <div class="field">
+          <label class="lbl" for="nama">Nama siswa</label>
+          <input class="in" id="nama" type="text" placeholder="Nama lengkap">
+        </div>
+        <div class="field">
+          <label class="lbl" for="kelas">Kelas</label>
+          <input class="in" id="kelas" type="text" placeholder="V">
+        </div>
+        <button class="btn primary" type="submit">Tambah siswa</button>
+      </div>
+    </form>
+  </section>
+
+  <section aria-labelledby="h3s">
+    <h2 id="h3s"><span class="step">3</span>Isi jawaban</h2>
+    <p class="hint" id="fillEmpty">Tambah siswa dulu di langkah 2, lalu isi jawabannya di sini.</p>
+    <div id="fillBox" hidden style="display:flex;flex-direction:column;gap:14px">
+      <div class="field" style="max-width:420px">
+        <label class="lbl" for="who">Siswa yang diisi</label>
+        <select class="in" id="who"></select>
+      </div>
+      <div>
+        <p class="hint" style="margin-bottom:8px">Ketuk nomor yang mau diisi. Nomor yang sudah terisi tampil berwarna dengan hurufnya.</p>
+        <div class="chips" id="chips"></div>
+      </div>
+      <p class="info" id="fillInfo" aria-live="polite"></p>
+      <div class="pick" id="pick">
+        <button type="button" data-v="A">A</button>
+        <button type="button" data-v="B">B</button>
+        <button type="button" data-v="C">C</button>
+        <button type="button" data-v="D">D</button>
+        <button type="button" data-v="E">E</button>
+        <button type="button" class="blank" data-v="">Kosongkan nomor ini</button>
+      </div>
+      <details>
+        <summary>Atau ketik semua jawaban sekaligus</summary>
+        <div class="inner">
+          <input class="in mono" id="bulk" type="text" autocapitalize="characters" aria-label="Jawaban berurutan" placeholder="Contoh: BCADDACDABCDABCDDCBAABCDBADCCA">
+          <p class="hint">Satu huruf per nomor, urut dari nomor 1. Kosong ditulis tanda minus (-). Ini menggantikan semua jawaban siswa yang dipilih.</p>
+          <div><button class="btn" id="bulkBtn" type="button">Terapkan ke siswa ini</button></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section aria-labelledby="h4s">
+    <h2 id="h4s"><span class="step">4</span>Tabel dan unduh</h2>
+    <p class="hint">Ketuk sel mana pun untuk memperbaiki. Sel kuning berarti jawabannya masih kosong.</p>
+    <div class="tablewrap" id="tableWrap"></div>
+    <div class="row-actions">
+      <button class="btn primary" id="dlBtn" type="button">Unduh Excel</button>
+      <button class="btn" id="copyBtn" type="button">Salin tabel</button>
+      <button class="btn" id="clearBtn" type="button">Kosongkan semua</button>
+    </div>
+    <p class="hint" id="dlNote" hidden>Di tampilan ini file Excel tidak bisa diunduh langsung. Tekan Salin untuk Excel, buka Excel atau Google Sheets, lalu tempel di sel A1. Unduhan file langsung tersedia jika halaman dibuka lewat aplikasi Claude.</p>
+    <div class="status-line" id="msg" role="status" aria-live="polite"></div>
+    <textarea class="copybox" id="copybox" readonly hidden aria-label="Tabel dalam bentuk teks, siap ditempel ke Excel"></textarea>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function () {
+  "use strict";
+  var S = { n: 30, rows: [], seq: 0, dl: null, sel: null, cur: 0 };
+  var $ = function (s) { return document.querySelector(s); };
+
+  function h(tag, props) {
+    var el = document.createElement(tag);
+    var p = props || {};
+    Object.keys(p).forEach(function (k) {
+      var v = p[k];
+      if (k === "class") el.className = v;
+      else if (k === "text") el.textContent = v;
+      else if (k === "value") el.value = v;
+      else if (k.indexOf("on") === 0) el.addEventListener(k.slice(2), v);
+      else if (v !== false && v != null) el.setAttribute(k, v);
+    });
+    for (var i = 2; i < arguments.length; i++) {
+      [].concat(arguments[i]).forEach(function (kid) {
+        if (kid == null || kid === false) return;
+        el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+      });
+    }
+    return el;
+  }
+  function range(n) { var a = []; for (var i = 0; i < n; i++) a.push(i); return a; }
+  function say(t) { $("#msg").textContent = t || ""; }
+
+  function chars(text) { return String(text || "").toUpperCase().replace(/[\s,;]/g, "").split("").filter(Boolean); }
+  function parseAns(text, n) {
+    var t = String(text || "").toUpperCase();
+    var out = range(n).map(function () { return ""; });
+    var pairs = t.match(/\d{1,3}\s*[-.):=]?\s*[A-E]/g) || [];
+    if (pairs.length >= 2) {
+      pairs.forEach(function (p) {
+        var m = /(\d{1,3})\s*[-.):=]?\s*([A-E])/.exec(p);
+        var i = parseInt(m[1], 10) - 1;
+        if (i >= 0 && i < n) out[i] = m[2];
+      });
+      return out;
+    }
+    var cs = chars(t);
+    return out.map(function (_, i) { return /^[A-E]$/.test(cs[i] || "") ? cs[i] : ""; });
+  }
+  function normRow(r) {
+    var a = (r.jawaban || []).slice(0, S.n);
+    while (a.length < S.n) a.push("");
+    r.jawaban = a;
+  }
+  function selRow() { return S.rows.find(function (r) { return r.id === S.sel; }) || null; }
+  function label(r) { return r.nama || ("Siswa " + (S.rows.indexOf(r) + 1)); }
+  function firstEmpty(r) { normRow(r); var i = r.jawaban.indexOf(""); return i < 0 ? 0 : i; }
+
+  /* ---------- tabel ---------- */
+  function paint(inp, v) { inp.classList.toggle("empty", v === ""); }
+  function syncCell(r, i) {
+    var inp = document.querySelector('tr[data-id="' + r.id + '"] input[data-i="' + i + '"]');
+    if (inp) { inp.value = r.jawaban[i]; paint(inp, r.jawaban[i]); }
+  }
+  function rowEl(row, idx) {
+    normRow(row);
+    var tr = h("tr", { "data-id": String(row.id), class: row.id === S.sel ? "sel" : "" });
+    tr.append(h("td", { class: "c-no", text: String(idx + 1) }));
+    var name = h("input", { class: "txt", type: "text", value: row.nama, placeholder: "Nama siswa", "aria-label": "Nama siswa" });
+    name.addEventListener("input", function () { row.nama = name.value; renderFill(true); });
+    var kel = h("input", { class: "txt k", type: "text", value: row.kelas, placeholder: "-", "aria-label": "Kelas" });
+    kel.addEventListener("input", function () { row.kelas = kel.value; });
+    tr.append(h("td", { class: "c-name" }, name), h("td", { class: "c-kelas" }, kel));
+    range(S.n).forEach(function (i) {
+      var inp = h("input", { class: "ans", type: "text", maxlength: "1", autocapitalize: "characters", autocomplete: "off", value: row.jawaban[i], "data-i": String(i), "aria-label": "Nomor " + (i + 1) });
+      paint(inp, row.jawaban[i]);
+      inp.addEventListener("input", function () {
+        var v = inp.value.toUpperCase().replace(/[^A-E]/g, "");
+        inp.value = v; row.jawaban[i] = v; paint(inp, v);
+        if (row.id === S.sel) renderChips();
+      });
+      tr.append(h("td", { class: "c-ans" }, inp));
+    });
+    tr.append(h("td", { class: "c-act" }, h("button", {
+      class: "xbtn", type: "button", "aria-label": "Hapus baris", text: "×",
+      onclick: function () { removeRow(row); }
+    })));
+    return tr;
+  }
+  function renderTable() {
+    var wrap = $("#tableWrap");
+    wrap.replaceChildren();
+    var head = h("tr", {},
+      h("th", { class: "c-no", text: "No" }), h("th", { class: "c-name", text: "Nama" }), h("th", { class: "c-kelas", text: "Kelas" }),
+      range(S.n).map(function (i) { return h("th", { class: "c-ans", text: String(i + 1) }); }), h("th", { class: "c-act" }));
+    wrap.append(h("table", {}, h("thead", {}, head), h("tbody", {}, S.rows.map(rowEl))));
+    if (!S.rows.length) wrap.append(h("div", { class: "empty-msg", text: "Belum ada siswa. Isi langkah 2 lalu tekan Tambah siswa." }));
+  }
+  function removeRow(row) {
+    S.rows = S.rows.filter(function (x) { return x !== row; });
+    if (S.sel === row.id) {
+      var last = S.rows[S.rows.length - 1];
+      S.sel = last ? last.id : null; S.cur = last ? firstEmpty(last) : 0;
+    }
+    renderTable(); renderFill();
+  }
+
+  /* ---------- pilih nomor lalu huruf ---------- */
+  function updateInfo() {
+    var r = selRow();
+    $("#fillInfo").textContent = r ? "Mengisi nomor " + (S.cur + 1) + " untuk " + label(r) + ". Ketuk huruf jawabannya." : "";
+  }
+  function renderChips() {
+    var r = selRow(), c = $("#chips");
+    c.replaceChildren();
+    if (!r) return;
+    normRow(r);
+    if (S.cur >= S.n) S.cur = S.n - 1;
+    range(S.n).forEach(function (i) {
+      var v = r.jawaban[i];
+      c.append(h("button", {
+        type: "button", class: "chip" + (i === S.cur ? " on" : "") + (v ? " done" : ""),
+        "aria-pressed": i === S.cur ? "true" : "false",
+        "aria-label": "Nomor " + (i + 1) + (v ? ", jawaban " + v : ", belum diisi"),
+        onclick: function () { S.cur = i; renderChips(); }
+      }, h("span", { class: "cn", text: String(i + 1) }), h("span", { class: "cl", text: v || "·" })));
+    });
+    updateInfo();
+  }
+  function renderFill(keepSelect) {
+    var r = selRow();
+    $("#fillBox").hidden = !r;
+    $("#fillBox").style.display = r ? "flex" : "none";
+    $("#fillEmpty").hidden = !!r;
+    var who = $("#who");
+    who.replaceChildren();
+    S.rows.forEach(function (x, i) { who.append(h("option", { value: String(x.id), text: (i + 1) + ". " + label(x) })); });
+    if (r) who.value = String(r.id);
+    renderChips();
+  }
+  function setAnswer(v) {
+    var r = selRow();
+    if (!r) return;
+    normRow(r);
+    r.jawaban[S.cur] = v;
+    syncCell(r, S.cur);
+    if (v && S.cur < S.n - 1) S.cur++;
+    renderChips();
+  }
+
+  /* ---------- ekspor ---------- */
+  function tsv() {
+    var lines = [["No", "Nama", "Kelas"].concat(range(S.n).map(function (i) { return String(i + 1); })).join("\t")];
+    S.rows.forEach(function (r, i) { normRow(r); lines.push([i + 1, r.nama, r.kelas].concat(r.jawaban).join("\t")); });
+    return lines.join("\n");
+  }
+  async function exportXlsx() {
+    if (!S.rows.length) { say("Belum ada data untuk diunduh."); return; }
+    if (!S.dl) { copyTable(); return; }
+    if (typeof XLSX === "undefined") { say("Pustaka Excel belum termuat. Muat ulang halaman, atau pakai Salin tabel."); return; }
+    var aoa = [["No", "Nama", "Kelas"].concat(range(S.n).map(function (i) { return i + 1; }))];
+    S.rows.forEach(function (r, i) { normRow(r); aoa.push([i + 1, r.nama, r.kelas].concat(r.jawaban)); });
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [{ wch: 5 }, { wch: 26 }, { wch: 8 }].concat(range(S.n).map(function () { return { wch: 4 }; }));
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Jawaban Siswa");
+    var buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    var d = new Date().toISOString().slice(0, 10);
+    if (!S.dl) { say("Unduhan tidak tersedia di tampilan ini. Pakai Salin tabel lalu tempel ke Excel."); return; }
+    try {
+      await S.dl.save({ filename: "jawaban-siswa-" + d + ".xlsx", data: new Blob([buf]) });
+      say("File Excel siap disimpan.");
+    } catch (e) {
+      say(e && e.code === "declined" ? "Unduhan dibatalkan." : "Unduhan gagal di tampilan ini. Pakai Salin tabel lalu tempel ke Excel.");
+    }
+  }
+  async function copyTable() {
+    if (!S.rows.length) { say("Belum ada data untuk disalin."); return; }
+    var text = tsv(), box = $("#copybox");
+    try {
+      await navigator.clipboard.writeText(text);
+      box.hidden = true; say("Tabel disalin. Tempel di sel A1 pada Excel atau Google Sheets.");
+    } catch (e) {
+      box.hidden = false; box.value = text; box.focus(); box.select();
+      say("Salin otomatis ditolak. Teks sudah terpilih, salin manual lalu tempel ke Excel.");
+    }
+  }
+
+  /* ---------- peristiwa ---------- */
+  $("#n").addEventListener("input", function () {
+    var v = parseInt($("#n").value, 10);
+    if (!isFinite(v)) return;
+    S.n = Math.min(60, Math.max(1, v));
+    if (S.cur >= S.n) S.cur = S.n - 1;
+    renderTable(); renderChips();
+  });
+  $("#form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var nama = $("#nama").value.trim();
+    if (!nama) { say("Isi nama siswa dulu."); $("#nama").focus(); return; }
+    var r = { id: ++S.seq, nama: nama, kelas: $("#kelas").value.trim(), jawaban: [] };
+    normRow(r); S.rows.push(r); S.sel = r.id; S.cur = 0;
+    $("#nama").value = ""; say("");
+    renderTable(); renderFill();
+    $("#fillBox").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+  $("#who").addEventListener("change", function () {
+    S.sel = parseInt($("#who").value, 10);
+    var r = selRow();
+    S.cur = r ? firstEmpty(r) : 0;
+    renderTable(); renderChips();
+  });
+  $("#pick").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-v]");
+    if (b) setAnswer(b.getAttribute("data-v"));
+  });
+  $("#bulkBtn").addEventListener("click", function () {
+    var r = selRow();
+    if (!r) return;
+    r.jawaban = parseAns($("#bulk").value, S.n);
+    $("#bulk").value = ""; S.cur = firstEmpty(r);
+    renderTable(); renderChips();
+    say("Jawaban " + label(r) + " diterapkan.");
+  });
+  $("#dlBtn").addEventListener("click", exportXlsx);
+  $("#copyBtn").addEventListener("click", copyTable);
+  $("#clearBtn").addEventListener("click", function () {
+    var b = $("#clearBtn");
+    if (!S.rows.length) return;
+    if (b.dataset.sure !== "1") {
+      b.dataset.sure = "1"; b.textContent = "Tekan lagi untuk hapus semua";
+      setTimeout(function () { b.dataset.sure = ""; b.textContent = "Kosongkan semua"; }, 3000);
+      return;
+    }
+    S.rows = []; S.sel = null; S.cur = 0; b.dataset.sure = ""; b.textContent = "Kosongkan semua";
+    $("#copybox").hidden = true; say(""); renderTable(); renderFill();
+  });
+
+  renderTable(); renderFill();
+  (async function () {
+    try { if (window.claude && window.claude.use) S.dl = await window.claude.use("downloads"); } catch (e) {}
+    if (!S.dl) {
+      $("#dlBtn").textContent = "Salin untuk Excel";
+      $("#copyBtn").hidden = true;
+      $("#dlNote").hidden = false;
+    }
+  })();
+})();
+</script>
+
+</body></html>

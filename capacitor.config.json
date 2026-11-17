@@ -1,0 +1,8 @@
+{
+  "appId": "id.rekap.lembarjawaban",
+  "appName": "Rekap Lembar Jawaban",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  }
+}
