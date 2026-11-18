@@ -34,7 +34,7 @@ jobs:
         run: npm run build
 
       - name: Install Capacitor Android CLI and platform
-        run: npm install --no-save --legacy-peer-deps @capacitor/cli @capacitor/android
+        run: npm install --no-save --legacy-peer-deps @capacitor/cli@^8.0.0 @capacitor/android@^8.0.0
 
       - name: Add and sync Android project
         run: |
@@ -52,6 +52,6 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rekap-lembar-jawaban-apk
+          name: rekapinjx-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

@@ -28,24 +28,24 @@ export function PWAInstallBar() {
             <button
               type="button"
               onClick={install}
-              className="inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-[#1B6B4F] bg-[#EDF5F1] px-3.5 py-2 text-xs font-semibold whitespace-nowrap text-[#144332] transition-colors hover:bg-[#DCEEE6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] dark:border-[#4AC294] dark:bg-[#193026] dark:text-[#A6E8CE] dark:hover:bg-[#214033]"
+              className="btn-gesture btn-surface-secondary inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F]"
             >
-              <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>Instal Aplikasi ke Perangkat</span>
+              <Download className="btn-nudge-up h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>Instal Aplikasi</span>
             </button>
           ) : (
             <button
               type="button"
               onClick={() => setShowGuide(true)}
-              className="inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-[#D4DDD8] bg-white px-3.5 py-2 text-xs font-semibold whitespace-nowrap text-[#14211C] transition-colors hover:bg-[#EAF2EE] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] dark:border-[#28362F] dark:bg-[#161F1B] dark:text-[#E6EEE9] dark:hover:bg-[#1E2B25]"
+              className="btn-gesture btn-surface-secondary inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F]"
             >
               <Smartphone className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span>
                 {isIOS
                   ? 'Instal di iPhone / iPad'
                   : isAndroid
-                    ? 'Pasang di Layar Utama Android'
-                    : 'Pasang sebagai Aplikasi (PWA / APK)'}
+                    ? 'Pasang di Android'
+                    : 'Pasang Aplikasi'}
               </span>
             </button>
           )}
@@ -125,7 +125,7 @@ export function PWAInstallBar() {
             <button
               type="button"
               onClick={() => setShowGuide(false)}
-              className="mt-4 min-h-[40px] w-full cursor-pointer rounded-lg bg-[#1B6B4F] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#15563F] dark:bg-[#4AC294] dark:text-[#0B1712]"
+              className="btn-gesture btn-surface-primary mt-4 min-h-[40px] w-full cursor-pointer rounded-xl px-4 py-2 text-sm font-semibold"
             >
               Mengerti
             </button>

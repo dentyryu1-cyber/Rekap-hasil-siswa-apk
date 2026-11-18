@@ -1,23 +1,71 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { AnswerEntrySection } from './components/AnswerEntrySection';
+import { ButtonStylePicker } from './components/ButtonStylePicker';
+import {
+  ClassScoreChartsSection,
+  type ChartStudentPoint,
+} from './components/ClassScoreChartsSection';
 import { ConfigAndStudentSection } from './components/ConfigAndStudentSection';
+import {
+  ExcelImportModal,
+  type AbcExcelImportPayload,
+  type UraianExcelImportPayload,
+} from './components/ExcelImportModal';
 import { ExcelPreviewModal } from './components/ExcelPreviewModal';
+import { HomeBerandaSection } from './components/HomeBerandaSection';
+import { ItemAnalysisSection } from './components/ItemAnalysisSection';
 import { PWAInstallBar } from './components/PWAInstallBar';
 import { RecapTableSection } from './components/RecapTableSection';
+import { SplashIntro } from './components/SplashIntro';
 import { TopBar } from './components/TopBar';
-import type { AnswerLetter, StudentRow } from './types/sheet';
+import { UraianAnalysisSection } from './components/UraianAnalysisSection';
+import { UraianConfigAndStudentSection } from './components/UraianConfigAndStudentSection';
+import { UraianEntrySection } from './components/UraianEntrySection';
+import { UraianRecapTableSection } from './components/UraianRecapTableSection';
+import type {
+  ActiveLayout,
+  AnswerLetter,
+  ButtonStyleMode,
+  ScoreValue,
+  StudentRow,
+  SurveySubMode,
+  UraianStudentRow,
+} from './types/sheet';
 import { firstEmptyIndex, normalizeAnswers } from './utils/answerParser';
+import {
+  exportProjectDataFile,
+  parseProjectDataFile,
+} from './utils/analysisExport';
 import {
   buildExcelWorkbookData,
   buildTsvText,
   downloadCsvFile,
   downloadExcelWorkbook,
 } from './utils/excelExport';
+import {
+  buildImportedStudentRows,
+  buildImportedUraianRows,
+} from './utils/excelImport';
+import {
+  buildUraianExcelWorkbookData,
+  buildUraianTsvText,
+  computeUraianStudentStats,
+  downloadUraianCsvFile,
+  downloadUraianExcelWorkbook,
+  exportUraianProjectDataFile,
+  firstEmptyScoreIndex,
+  normalizeMaxScores,
+  normalizeScores,
+  parseUraianProjectDataFile,
+} from './utils/uraianAnalysis';
 
-const STORAGE_KEY = 'rekap-lembar-jawaban-v1';
+const STORAGE_KEY_ABC = 'rekap-lembar-jawaban-v1';
+const STORAGE_KEY_URAIAN = 'rekap-lembar-jawaban-uraian-v1';
 const THEME_STORAGE_KEY = 'rekap-lembar-jawaban-theme';
+const BTN_STYLE_STORAGE_KEY = 'rekap-lembar-jawaban-btn-style';
 
-interface PersistedState {
+interface PersistedAbcState {
   questionCount: number;
   examTitle: string;
   answerKey: AnswerLetter[];
@@ -25,11 +73,22 @@ interface PersistedState {
   seq: number;
 }
 
-function loadInitialState(): PersistedState {
+interface PersistedUraianState {
+  itemCount: number;
+  examTitle: string;
+  subMode: SurveySubMode;
+  scaleMin: number;
+  defaultMaxScore: number;
+  itemMaxScores: number[];
+  rows: UraianStudentRow[];
+  seq: number;
+}
+
+function loadInitialAbcState(): PersistedAbcState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY_ABC);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<PersistedState>;
+      const parsed = JSON.parse(raw) as Partial<PersistedAbcState>;
       const questionCount =
         typeof parsed.questionCount === 'number' &&
         parsed.questionCount >= 1 &&
@@ -58,6 +117,65 @@ function loadInitialState(): PersistedState {
   };
 }
 
+function loadInitialUraianState(): PersistedUraianState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_URAIAN);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<PersistedUraianState>;
+      const itemCount =
+        typeof parsed.itemCount === 'number' &&
+        parsed.itemCount >= 1 &&
+        parsed.itemCount <= 100
+          ? parsed.itemCount
+          : 10;
+      const scaleMin =
+        typeof parsed.scaleMin === 'number' && Number.isFinite(parsed.scaleMin)
+          ? parsed.scaleMin
+          : 0;
+      const defaultMaxScore =
+        typeof parsed.defaultMaxScore === 'number' &&
+        parsed.defaultMaxScore > scaleMin
+          ? parsed.defaultMaxScore
+          : 10;
+      const subMode: SurveySubMode =
+        parsed.subMode === 'angket-4' ||
+        parsed.subMode === 'angket-5' ||
+        parsed.subMode === 'custom'
+          ? parsed.subMode
+          : 'uraian';
+      const rows = Array.isArray(parsed.rows) ? parsed.rows : [];
+      const maxId = rows.reduce((acc, r) => Math.max(acc, r.id || 0), 0);
+      return {
+        itemCount,
+        examTitle: typeof parsed.examTitle === 'string' ? parsed.examTitle : '',
+        subMode,
+        scaleMin,
+        defaultMaxScore,
+        itemMaxScores: normalizeMaxScores(
+          Array.isArray(parsed.itemMaxScores) ? parsed.itemMaxScores : [],
+          itemCount,
+          defaultMaxScore,
+          scaleMin,
+        ),
+        rows,
+        seq: typeof parsed.seq === 'number' ? Math.max(parsed.seq, maxId) : maxId,
+      };
+    }
+  } catch {
+    // Ignore malformed storage
+  }
+  return {
+    itemCount: 10,
+    examTitle: '',
+    subMode: 'uraian',
+    scaleMin: 0,
+    defaultMaxScore: 10,
+    itemMaxScores: new Array(10).fill(10),
+    rows: [],
+    seq: 0,
+  };
+}
+
 function loadInitialTheme(): boolean {
   try {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
@@ -69,22 +187,47 @@ function loadInitialTheme(): boolean {
   return false;
 }
 
-export default function App() {
-  const [initial] = useState<PersistedState>(loadInitialState);
-  const [questionCount, setQuestionCount] = useState<number>(
-    initial.questionCount,
-  );
-  const [examTitle, setExamTitle] = useState<string>(initial.examTitle);
-  const [answerKey, setAnswerKey] = useState<AnswerLetter[]>(initial.answerKey);
-  const [rows, setRows] = useState<StudentRow[]>(initial.rows);
-  const [seq, setSeq] = useState<number>(initial.seq);
+function loadInitialButtonStyle(): ButtonStyleMode {
+  try {
+    const saved = localStorage.getItem(BTN_STYLE_STORAGE_KEY);
+    if (
+      saved === 'wood' ||
+      saved === 'tactile' ||
+      saved === 'flat' ||
+      saved === 'glass'
+    ) {
+      return saved;
+    }
+  } catch {
+    // Ignore storage read error
+  }
+  return 'wood';
+}
 
+export default function App() {
+  const [activeLayout, setActiveLayout] = useState<ActiveLayout>('beranda');
+  const [darkMode, setDarkMode] = useState<boolean>(loadInitialTheme);
+  const [buttonStyle, setButtonStyle] = useState<ButtonStyleMode>(
+    loadInitialButtonStyle,
+  );
+
+  // ========================
+  // Layout 2: Pilihan Ganda (ABC) State
+  // ========================
+  const [initialAbc] = useState<PersistedAbcState>(loadInitialAbcState);
+  const [questionCount, setQuestionCount] = useState<number>(
+    initialAbc.questionCount,
+  );
+  const [examTitle, setExamTitle] = useState<string>(initialAbc.examTitle);
+  const [answerKey, setAnswerKey] = useState<AnswerLetter[]>(
+    initialAbc.answerKey,
+  );
+  const [rows, setRows] = useState<StudentRow[]>(initialAbc.rows);
+  const [seq, setSeq] = useState<number>(initialAbc.seq);
   const [selectedId, setSelectedId] = useState<number | null>(
-    initial.rows[0]?.id ?? null,
+    initialAbc.rows[0]?.id ?? null,
   );
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState<number>(0);
-
-  const [darkMode, setDarkMode] = useState<boolean>(loadInitialTheme);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [clipboardFallbackText, setClipboardFallbackText] =
     useState<string>('');
@@ -92,19 +235,164 @@ export default function App() {
     row: StudentRow;
     index: number;
   } | null>(null);
-  const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
-
+  const [isAbcPreviewOpen, setIsAbcPreviewOpen] = useState<boolean>(false);
+  const [isAbcImportOpen, setIsAbcImportOpen] = useState<boolean>(false);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
 
-  const excelPreviewData = useMemo(() => {
-    if (!isPreviewOpen || rows.length === 0) return null;
+  // ========================
+  // Layout 3: Angket / Uraian State
+  // ========================
+  const [initialUraian] = useState<PersistedUraianState>(loadInitialUraianState);
+  const [uraianItemCount, setUraianItemCount] = useState<number>(
+    initialUraian.itemCount,
+  );
+  const [uraianExamTitle, setUraianExamTitle] = useState<string>(
+    initialUraian.examTitle,
+  );
+  const [uraianSubMode, setUraianSubMode] = useState<SurveySubMode>(
+    initialUraian.subMode,
+  );
+  const [uraianScaleMin, setUraianScaleMin] = useState<number>(
+    initialUraian.scaleMin,
+  );
+  const [uraianDefaultMax, setUraianDefaultMax] = useState<number>(
+    initialUraian.defaultMaxScore,
+  );
+  const [uraianItemMaxScores, setUraianItemMaxScores] = useState<number[]>(
+    initialUraian.itemMaxScores,
+  );
+  const [uraianRows, setUraianRows] = useState<UraianStudentRow[]>(
+    initialUraian.rows,
+  );
+  const [uraianSeq, setUraianSeq] = useState<number>(initialUraian.seq);
+  const [uraianSelectedId, setUraianSelectedId] = useState<number | null>(
+    initialUraian.rows[0]?.id ?? null,
+  );
+  const [uraianCurrentItemIdx, setUraianCurrentItemIdx] = useState<number>(0);
+  const [uraianStatusMessage, setUraianStatusMessage] = useState<string>('');
+  const [uraianClipboardFallback, setUraianClipboardFallback] =
+    useState<string>('');
+  const [uraianLastDeleted, setUraianLastDeleted] = useState<{
+    row: UraianStudentRow;
+    index: number;
+  } | null>(null);
+  const [isUraianPreviewOpen, setIsUraianPreviewOpen] = useState<boolean>(false);
+  const [isUraianImportOpen, setIsUraianImportOpen] = useState<boolean>(false);
+  const uraianNameInputRef = useRef<HTMLInputElement | null>(null);
+
+  const abcExcelPreviewData = useMemo(() => {
+    if (!isAbcPreviewOpen || rows.length === 0) return null;
     return buildExcelWorkbookData({
       rows,
       questionCount,
       examTitle,
       answerKey,
     });
-  }, [isPreviewOpen, rows, questionCount, examTitle, answerKey]);
+  }, [isAbcPreviewOpen, rows, questionCount, examTitle, answerKey]);
+
+  const uraianExcelPreviewData = useMemo(() => {
+    if (!isUraianPreviewOpen || uraianRows.length === 0) return null;
+    return buildUraianExcelWorkbookData({
+      rows: uraianRows,
+      itemCount: uraianItemCount,
+      examTitle: uraianExamTitle,
+      subMode: uraianSubMode,
+      scaleMin: uraianScaleMin,
+      itemMaxScores: uraianItemMaxScores,
+    });
+  }, [
+    isUraianPreviewOpen,
+    uraianRows,
+    uraianItemCount,
+    uraianExamTitle,
+    uraianSubMode,
+    uraianScaleMin,
+    uraianItemMaxScores,
+  ]);
+
+  const abcChartData = useMemo<{
+    hasScoreData: boolean;
+    students: ChartStudentPoint[];
+  }>(() => {
+    const normKey = normalizeAnswers(answerKey, questionCount);
+    const keyedIndices: number[] = [];
+    for (let i = 0; i < questionCount; i++) {
+      if (normKey[i] !== '') keyedIndices.push(i);
+    }
+    if (rows.length === 0 || keyedIndices.length === 0) {
+      return { hasScoreData: false, students: [] };
+    }
+    const maxScore = keyedIndices.length;
+    const students: ChartStudentPoint[] = rows.map((row, idx) => {
+      const ans = normalizeAnswers(row.jawaban, questionCount);
+      let correct = 0;
+      for (const qIdx of keyedIndices) {
+        if (ans[qIdx] === normKey[qIdx]) correct++;
+      }
+      return {
+        id: row.id,
+        nama: row.nama || `Siswa ${idx + 1}`,
+        kelas: row.kelas || '',
+        rawScore: correct,
+        maxScore,
+        percentScore: Math.round((correct / maxScore) * 1000) / 10,
+      };
+    });
+    return { hasScoreData: true, students };
+  }, [rows, questionCount, answerKey]);
+
+  const uraianChartData = useMemo<{
+    hasScoreData: boolean;
+    students: ChartStudentPoint[];
+  }>(() => {
+    if (uraianRows.length === 0 || uraianItemCount < 1) {
+      return { hasScoreData: false, students: [] };
+    }
+    const normMax = normalizeMaxScores(
+      uraianItemMaxScores,
+      uraianItemCount,
+      uraianDefaultMax,
+      uraianScaleMin,
+    );
+    const hasAnyFilled = uraianRows.some((r) =>
+      r.scores.slice(0, uraianItemCount).some((v) => v !== null && v !== undefined),
+    );
+    if (!hasAnyFilled) {
+      return { hasScoreData: false, students: [] };
+    }
+    const students: ChartStudentPoint[] = uraianRows.map((row, idx) => {
+      const normScores = normalizeScores(
+        row.scores,
+        uraianItemCount,
+        uraianScaleMin,
+        normMax,
+      );
+      const stats = computeUraianStudentStats(
+        normScores,
+        uraianItemCount,
+        normMax,
+      );
+      const pct =
+        stats.maxPossible > 0
+          ? Math.round((stats.totalScore / stats.maxPossible) * 1000) / 10
+          : 0;
+      return {
+        id: row.id,
+        nama: row.nama || `Peserta ${idx + 1}`,
+        kelas: row.kelas || '',
+        rawScore: stats.totalScore,
+        maxScore: stats.maxPossible,
+        percentScore: pct,
+      };
+    });
+    return { hasScoreData: true, students };
+  }, [
+    uraianRows,
+    uraianItemCount,
+    uraianItemMaxScores,
+    uraianDefaultMax,
+    uraianScaleMin,
+  ]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -116,19 +404,55 @@ export default function App() {
   }, [darkMode]);
 
   useEffect(() => {
+    document.documentElement.dataset.btnStyle = buttonStyle;
     try {
-      const payload: PersistedState = {
+      localStorage.setItem(BTN_STYLE_STORAGE_KEY, buttonStyle);
+    } catch {
+      // Ignore storage write error
+    }
+  }, [buttonStyle]);
+
+  useEffect(() => {
+    try {
+      const payload: PersistedAbcState = {
         questionCount,
         examTitle,
         answerKey,
         rows,
         seq,
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      localStorage.setItem(STORAGE_KEY_ABC, JSON.stringify(payload));
     } catch {
       // Ignore quota errors
     }
   }, [questionCount, examTitle, answerKey, rows, seq]);
+
+  useEffect(() => {
+    try {
+      const payload: PersistedUraianState = {
+        itemCount: uraianItemCount,
+        examTitle: uraianExamTitle,
+        subMode: uraianSubMode,
+        scaleMin: uraianScaleMin,
+        defaultMaxScore: uraianDefaultMax,
+        itemMaxScores: uraianItemMaxScores,
+        rows: uraianRows,
+        seq: uraianSeq,
+      };
+      localStorage.setItem(STORAGE_KEY_URAIAN, JSON.stringify(payload));
+    } catch {
+      // Ignore quota errors
+    }
+  }, [
+    uraianItemCount,
+    uraianExamTitle,
+    uraianSubMode,
+    uraianScaleMin,
+    uraianDefaultMax,
+    uraianItemMaxScores,
+    uraianRows,
+    uraianSeq,
+  ]);
 
   useEffect(() => {
     if (currentQuestionIdx >= questionCount) {
@@ -136,10 +460,20 @@ export default function App() {
     }
   }, [questionCount, currentQuestionIdx]);
 
-  function showStatus(msg: string) {
-    setStatusMessage(msg);
+  useEffect(() => {
+    if (uraianCurrentItemIdx >= uraianItemCount) {
+      setUraianCurrentItemIdx(Math.max(0, uraianItemCount - 1));
+    }
+  }, [uraianItemCount, uraianCurrentItemIdx]);
+
+  function handleNavigateLayout(nextLayout: ActiveLayout) {
+    setActiveLayout(nextLayout);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  // ========================
+  // ABC Handlers
+  // ========================
   function handleAddStudent(nama: string, kelas: string) {
     const nextId = seq + 1;
     const newRow: StudentRow = {
@@ -154,7 +488,7 @@ export default function App() {
     setCurrentQuestionIdx(0);
     setClipboardFallbackText('');
     setLastDeleted(null);
-    showStatus(`Siswa "${nama}" ditambahkan.`);
+    setStatusMessage(`Siswa "${nama}" ditambahkan.`);
   }
 
   function handleAddMultipleStudents(
@@ -178,7 +512,7 @@ export default function App() {
     }
     setClipboardFallbackText('');
     setLastDeleted(null);
-    showStatus(`${created.length} siswa ditambahkan ke tabel.`);
+    setStatusMessage(`${created.length} siswa ditambahkan ke tabel.`);
   }
 
   function handleSelectStudent(id: number) {
@@ -217,7 +551,7 @@ export default function App() {
       }),
     );
     setCurrentQuestionIdx(firstEmptyIndex(answers, questionCount));
-    showStatus(
+    setStatusMessage(
       `Jawaban untuk ${targetRow?.nama || 'siswa terpilih'} berhasil diterapkan.`,
     );
   }
@@ -265,7 +599,7 @@ export default function App() {
         nextTarget ? firstEmptyIndex(nextTarget.jawaban, questionCount) : 0,
       );
     }
-    showStatus(`Siswa "${removed.nama || `Siswa ${idx + 1}`}" dihapus.`);
+    setStatusMessage(`Siswa "${removed.nama || `Siswa ${idx + 1}`}" dihapus.`);
   }
 
   function handleUndoDelete() {
@@ -280,7 +614,7 @@ export default function App() {
     setSelectedId(row.id);
     setCurrentQuestionIdx(firstEmptyIndex(row.jawaban, questionCount));
     setLastDeleted(null);
-    showStatus(`Siswa "${row.nama}" dikembalikan.`);
+    setStatusMessage(`Siswa "${row.nama}" dikembalikan.`);
   }
 
   function handleClearAll() {
@@ -289,20 +623,22 @@ export default function App() {
     setCurrentQuestionIdx(0);
     setClipboardFallbackText('');
     setLastDeleted(null);
-    showStatus('Semua data siswa telah dikosongkan.');
+    setStatusMessage('Semua data siswa telah dikosongkan.');
   }
 
   function handleOpenPreview() {
     if (rows.length === 0) {
-      showStatus('Tambahkan minimal satu siswa sebelum melihat pratinjau Excel.');
+      setStatusMessage(
+        'Tambahkan minimal satu siswa sebelum melihat pratinjau Excel.',
+      );
       return;
     }
-    setIsPreviewOpen(true);
+    setIsAbcPreviewOpen(true);
   }
 
   function handleDownloadExcel() {
     if (rows.length === 0) {
-      showStatus('Tambahkan minimal satu siswa sebelum mengunduh Excel.');
+      setStatusMessage('Tambahkan minimal satu siswa sebelum mengunduh Excel.');
       return;
     }
     try {
@@ -312,17 +648,19 @@ export default function App() {
         examTitle,
         answerKey,
       });
-      setIsPreviewOpen(false);
+      setIsAbcPreviewOpen(false);
       setClipboardFallbackText('');
-      showStatus(`File Excel "${filename}" berhasil diunduh.`);
+      setStatusMessage(`File Excel "${filename}" berhasil diunduh.`);
     } catch {
-      showStatus('Gagal membuat file Excel. Gunakan Unduh CSV atau Salin tabel.');
+      setStatusMessage(
+        'Gagal membuat file Excel. Gunakan Unduh CSV atau Salin tabel.',
+      );
     }
   }
 
   function handleDownloadCsv() {
     if (rows.length === 0) {
-      showStatus('Tambahkan minimal satu siswa sebelum mengunduh CSV.');
+      setStatusMessage('Tambahkan minimal satu siswa sebelum mengunduh CSV.');
       return;
     }
     const filename = downloadCsvFile({
@@ -332,61 +670,152 @@ export default function App() {
       answerKey,
     });
     setClipboardFallbackText('');
-    showStatus(`File CSV "${filename}" berhasil diunduh.`);
+    setStatusMessage(`File CSV "${filename}" berhasil diunduh.`);
   }
 
   async function handleCopyTable() {
     if (rows.length === 0) {
-      showStatus('Belum ada data untuk disalin.');
+      setStatusMessage('Belum ada data untuk disalin.');
       return;
     }
     const tsv = buildTsvText(rows, questionCount, answerKey);
     try {
       await navigator.clipboard.writeText(tsv);
       setClipboardFallbackText('');
-      showStatus(
+      setStatusMessage(
         'Tabel berhasil disalin. Tempel (Ctrl+V) di sel A1 pada Excel atau Google Sheets.',
       );
     } catch {
       setClipboardFallbackText(tsv);
-      showStatus(
+      setStatusMessage(
         'Salin otomatis dibatasi browser. Salin teks dari kotak di bawah lalu tempel di Excel.',
       );
     }
   }
 
+  function handleExportProjectData() {
+    const filename = exportProjectDataFile({
+      examTitle,
+      questionCount,
+      answerKey,
+      rows,
+    });
+    setStatusMessage(`File data tes "${filename}" berhasil disimpan.`);
+  }
+
+  function handleImportProjectData(rawText: string) {
+    try {
+      const loaded = parseProjectDataFile(rawText);
+      const maxId = loaded.rows.reduce((acc, r) => Math.max(acc, r.id || 0), 0);
+      setQuestionCount(loaded.questionCount);
+      setExamTitle(loaded.examTitle);
+      setAnswerKey(loaded.answerKey);
+      setRows(loaded.rows);
+      setSeq(maxId);
+      setSelectedId(loaded.rows[0]?.id ?? null);
+      setCurrentQuestionIdx(
+        loaded.rows[0]
+          ? firstEmptyIndex(loaded.rows[0].jawaban, loaded.questionCount)
+          : 0,
+      );
+      setLastDeleted(null);
+      setClipboardFallbackText('');
+      setStatusMessage(
+        `File data berhasil dibuka: ${loaded.rows.length} siswa × ${loaded.questionCount} soal.`,
+      );
+    } catch {
+      setStatusMessage(
+        'Gagal membuka file data. Pastikan file berformat .json hasil simpan aplikasi ini.',
+      );
+    }
+  }
+
+  function handleConfirmAbcExcelImport(payload: AbcExcelImportPayload) {
+    const nextQuestionCount =
+      payload.mode === 'replace'
+        ? payload.questionCount
+        : Math.max(questionCount, payload.questionCount);
+    const startSeq = payload.mode === 'replace' ? 0 : seq;
+    const importedRows = buildImportedStudentRows(
+      payload.rows,
+      startSeq,
+      nextQuestionCount,
+    );
+    const nextSeq = startSeq + importedRows.length;
+
+    setQuestionCount(nextQuestionCount);
+    if (payload.applyKey && payload.answerKey) {
+      setAnswerKey(normalizeAnswers(payload.answerKey, nextQuestionCount));
+    }
+
+    if (payload.mode === 'replace') {
+      setRows(importedRows);
+      setSelectedId(importedRows[0]?.id ?? null);
+      setCurrentQuestionIdx(
+        importedRows[0]
+          ? firstEmptyIndex(importedRows[0].jawaban, nextQuestionCount)
+          : 0,
+      );
+    } else {
+      setRows((prev) => [...prev, ...importedRows]);
+      if (selectedId === null && importedRows[0]) {
+        setSelectedId(importedRows[0].id);
+        setCurrentQuestionIdx(
+          firstEmptyIndex(importedRows[0].jawaban, nextQuestionCount),
+        );
+      }
+    }
+
+    setSeq(nextSeq);
+    setLastDeleted(null);
+    setClipboardFallbackText('');
+    setStatusMessage(
+      `Berhasil mengimpor ${importedRows.length} siswa × ${nextQuestionCount} soal dari Excel.`,
+    );
+  }
+
   function handleLoadSampleData() {
     const sampleCount = Math.max(questionCount, 40);
-    const sampleKey: AnswerLetter[] = Array.from({ length: sampleCount }, (_, i) => {
-      const opts: Array<Exclude<AnswerLetter, ''>> = ['A', 'B', 'C', 'D', 'E'];
-      return opts[(i * 3 + 1) % 5];
-    });
-    const sampleStudents: Array<{ nama: string; kelas: string; jawaban: AnswerLetter[] }> = [
-      {
-        nama: 'Aulia Rahman',
-        kelas: 'VIII-A',
-        jawaban: sampleKey.map((k, i) => (i % 9 === 0 ? 'B' : k)),
-      },
-      {
-        nama: 'Bagus Pratama',
-        kelas: 'VIII-A',
-        jawaban: sampleKey.map((k, i) => (i === 34 ? '' : i % 6 === 0 ? 'D' : k)),
-      },
-      {
-        nama: 'Citra Dewi Lestari',
-        kelas: 'VIII-B',
-        jawaban: sampleKey.map((k, i) => (i % 11 === 0 ? 'C' : k)),
-      },
+    const opts: Array<Exclude<AnswerLetter, ''>> = ['A', 'B', 'C', 'D', 'E'];
+    const sampleKey: AnswerLetter[] = Array.from(
+      { length: sampleCount },
+      (_, i) => opts[(i * 3 + 1) % 5],
+    );
+
+    const roster: Array<{ nama: string; kelas: string; accuracy: number }> = [
+      { nama: 'Aulia Rahman', kelas: 'VIII-A', accuracy: 0.92 },
+      { nama: 'Nadia Kusuma', kelas: 'VIII-A', accuracy: 0.88 },
+      { nama: 'Rafi Pratama', kelas: 'VIII-A', accuracy: 0.85 },
+      { nama: 'Citra Dewi Lestari', kelas: 'VIII-B', accuracy: 0.78 },
+      { nama: 'Dimas Saputra', kelas: 'VIII-B', accuracy: 0.72 },
+      { nama: 'Siti Nurhaliza', kelas: 'VIII-A', accuracy: 0.68 },
+      { nama: 'Bagus Santoso', kelas: 'VIII-B', accuracy: 0.62 },
+      { nama: 'Putri Maharani', kelas: 'VIII-B', accuracy: 0.55 },
+      { nama: 'Hendra Wijaya', kelas: 'VIII-C', accuracy: 0.48 },
+      { nama: 'Tari Melati', kelas: 'VIII-C', accuracy: 0.42 },
+      { nama: 'Fajar Hidayat', kelas: 'VIII-C', accuracy: 0.35 },
+      { nama: 'Rizky Maulana', kelas: 'VIII-C', accuracy: 0.28 },
     ];
 
     let nextId = seq;
-    const created: StudentRow[] = sampleStudents.map((s) => {
+    const created: StudentRow[] = roster.map((student, sIdx) => {
       nextId += 1;
+      const jawaban: AnswerLetter[] = sampleKey.map((keyChar, qIdx) => {
+        if (sIdx === 6 && qIdx === 34) return '';
+        const itemFactor = (qIdx * 7 + sIdx * 13) % 100;
+        const threshold = Math.round(student.accuracy * 100) - (qIdx % 5) * 4;
+        if (itemFactor < threshold) {
+          return keyChar;
+        }
+        const keyPos = opts.indexOf(keyChar as Exclude<AnswerLetter, ''>);
+        const offset = 1 + ((sIdx + qIdx) % 4);
+        return opts[(keyPos + offset) % 5];
+      });
       return {
         id: nextId,
-        nama: s.nama,
-        kelas: s.kelas,
-        jawaban: s.jawaban,
+        nama: student.nama,
+        kelas: student.kelas,
+        jawaban,
       };
     });
 
@@ -397,86 +826,785 @@ export default function App() {
     setRows(created);
     setSelectedId(created[0].id);
     setCurrentQuestionIdx(firstEmptyIndex(created[0].jawaban, sampleCount));
-    showStatus(`Contoh data ${sampleCount} butir soal berhasil dimuat.`);
+    setStatusMessage(
+      `Contoh data ${created.length} siswa × ${sampleCount} butir soal berhasil dimuat.`,
+    );
+  }
+
+  // ========================
+  // Uraian / Angket Handlers
+  // ========================
+  function handleChangeUraianItemCount(nextCount: number) {
+    setUraianItemCount(nextCount);
+    setUraianItemMaxScores((prev) =>
+      normalizeMaxScores(prev, nextCount, uraianDefaultMax, uraianScaleMin),
+    );
+  }
+
+  function handleSelectUraianPresetMode(
+    mode: SurveySubMode,
+    min: number,
+    defaultMax: number,
+  ) {
+    setUraianSubMode(mode);
+    setUraianScaleMin(min);
+    setUraianDefaultMax(defaultMax);
+    setUraianItemMaxScores(new Array(uraianItemCount).fill(defaultMax));
+  }
+
+  function handleChangeUraianDefaultMax(nextMax: number) {
+    setUraianDefaultMax(nextMax);
+    setUraianItemMaxScores(new Array(uraianItemCount).fill(nextMax));
+  }
+
+  function handleChangeUraianItemMax(itemIdx: number, nextMax: number) {
+    setUraianItemMaxScores((prev) => {
+      const next = normalizeMaxScores(
+        prev,
+        uraianItemCount,
+        uraianDefaultMax,
+        uraianScaleMin,
+      );
+      next[itemIdx] = nextMax;
+      return next;
+    });
+  }
+
+  function handleAddUraianStudent(nama: string, kelas: string) {
+    const nextId = uraianSeq + 1;
+    const newRow: UraianStudentRow = {
+      id: nextId,
+      nama,
+      kelas,
+      scores: new Array(uraianItemCount).fill(null),
+    };
+    setUraianSeq(nextId);
+    setUraianRows((prev) => [...prev, newRow]);
+    setUraianSelectedId(nextId);
+    setUraianCurrentItemIdx(0);
+    setUraianClipboardFallback('');
+    setUraianLastDeleted(null);
+    setUraianStatusMessage(`Peserta "${nama}" ditambahkan.`);
+  }
+
+  function handleAddMultipleUraianStudents(
+    items: Array<{ nama: string; kelas: string }>,
+  ) {
+    let nextSeq = uraianSeq;
+    const created: UraianStudentRow[] = items.map((item) => {
+      nextSeq += 1;
+      return {
+        id: nextSeq,
+        nama: item.nama,
+        kelas: item.kelas,
+        scores: new Array(uraianItemCount).fill(null),
+      };
+    });
+    setUraianSeq(nextSeq);
+    setUraianRows((prev) => [...prev, ...created]);
+    if (created.length > 0) {
+      setUraianSelectedId(created[0].id);
+      setUraianCurrentItemIdx(0);
+    }
+    setUraianClipboardFallback('');
+    setUraianLastDeleted(null);
+    setUraianStatusMessage(`${created.length} peserta ditambahkan.`);
+  }
+
+  function handleSelectUraianStudent(id: number) {
+    setUraianSelectedId(id);
+    const target = uraianRows.find((r) => r.id === id);
+    if (target) {
+      setUraianCurrentItemIdx(
+        firstEmptyScoreIndex(target.scores, uraianItemCount),
+      );
+    }
+  }
+
+  function handleSetUraianScore(score: ScoreValue) {
+    if (uraianSelectedId === null) return;
+    const normMax = normalizeMaxScores(
+      uraianItemMaxScores,
+      uraianItemCount,
+      uraianDefaultMax,
+      uraianScaleMin,
+    );
+    setUraianRows((prev) =>
+      prev.map((row) => {
+        if (row.id !== uraianSelectedId) return row;
+        const nextScores = normalizeScores(
+          row.scores,
+          Math.max(row.scores.length, uraianItemCount),
+          uraianScaleMin,
+          normMax,
+        );
+        nextScores[uraianCurrentItemIdx] = score;
+        return { ...row, scores: nextScores };
+      }),
+    );
+    if (score !== null && uraianCurrentItemIdx < uraianItemCount - 1) {
+      setUraianCurrentItemIdx((i) => i + 1);
+    }
+  }
+
+  function handleApplyBulkUraianScores(scores: ScoreValue[]) {
+    if (uraianSelectedId === null) return;
+    const target = uraianRows.find((r) => r.id === uraianSelectedId);
+    setUraianRows((prev) =>
+      prev.map((row) =>
+        row.id === uraianSelectedId ? { ...row, scores } : row,
+      ),
+    );
+    setUraianCurrentItemIdx(firstEmptyScoreIndex(scores, uraianItemCount));
+    setUraianStatusMessage(
+      `Skor untuk ${target?.nama || 'peserta terpilih'} berhasil diterapkan.`,
+    );
+  }
+
+  function handleUpdateUraianRowMeta(
+    id: number,
+    field: 'nama' | 'kelas',
+    value: string,
+  ) {
+    setUraianRows((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)),
+    );
+  }
+
+  function handleUpdateUraianCell(
+    id: number,
+    itemIdx: number,
+    value: ScoreValue,
+  ) {
+    const normMax = normalizeMaxScores(
+      uraianItemMaxScores,
+      uraianItemCount,
+      uraianDefaultMax,
+      uraianScaleMin,
+    );
+    setUraianRows((prev) =>
+      prev.map((row) => {
+        if (row.id !== id) return row;
+        const nextScores = normalizeScores(
+          row.scores,
+          Math.max(row.scores.length, uraianItemCount),
+          uraianScaleMin,
+          normMax,
+        );
+        nextScores[itemIdx] = value;
+        return { ...row, scores: nextScores };
+      }),
+    );
+  }
+
+  function handleRemoveUraianRow(id: number) {
+    const idx = uraianRows.findIndex((r) => r.id === id);
+    if (idx < 0) return;
+    const removed = uraianRows[idx];
+    const remaining = uraianRows.filter((r) => r.id !== id);
+    setUraianRows(remaining);
+    setUraianLastDeleted({ row: removed, index: idx });
+
+    if (uraianSelectedId === id) {
+      const nextTarget = remaining[Math.min(idx, remaining.length - 1)] || null;
+      setUraianSelectedId(nextTarget ? nextTarget.id : null);
+      setUraianCurrentItemIdx(
+        nextTarget
+          ? firstEmptyScoreIndex(nextTarget.scores, uraianItemCount)
+          : 0,
+      );
+    }
+    setUraianStatusMessage(
+      `Peserta "${removed.nama || `Peserta ${idx + 1}`}" dihapus.`,
+    );
+  }
+
+  function handleUndoUraianDelete() {
+    if (!uraianLastDeleted) return;
+    const { row, index } = uraianLastDeleted;
+    setUraianRows((prev) => {
+      const copy = [...prev];
+      const insertAt = Math.min(Math.max(0, index), copy.length);
+      copy.splice(insertAt, 0, row);
+      return copy;
+    });
+    setUraianSelectedId(row.id);
+    setUraianCurrentItemIdx(firstEmptyScoreIndex(row.scores, uraianItemCount));
+    setUraianLastDeleted(null);
+    setUraianStatusMessage(`Peserta "${row.nama}" dikembalikan.`);
+  }
+
+  function handleClearAllUraian() {
+    setUraianRows([]);
+    setUraianSelectedId(null);
+    setUraianCurrentItemIdx(0);
+    setUraianClipboardFallback('');
+    setUraianLastDeleted(null);
+    setUraianStatusMessage('Semua data angket / uraian dikosongkan.');
+  }
+
+  function handleDownloadUraianExcel() {
+    if (uraianRows.length === 0) {
+      setUraianStatusMessage(
+        'Tambahkan minimal satu peserta sebelum mengunduh Excel.',
+      );
+      return;
+    }
+    try {
+      const filename = downloadUraianExcelWorkbook({
+        rows: uraianRows,
+        itemCount: uraianItemCount,
+        examTitle: uraianExamTitle,
+        subMode: uraianSubMode,
+        scaleMin: uraianScaleMin,
+        itemMaxScores: uraianItemMaxScores,
+      });
+      setIsUraianPreviewOpen(false);
+      setUraianClipboardFallback('');
+      setUraianStatusMessage(`File Excel "${filename}" berhasil diunduh.`);
+    } catch {
+      setUraianStatusMessage('Gagal membuat file Excel.');
+    }
+  }
+
+  function handleDownloadUraianCsv() {
+    if (uraianRows.length === 0) return;
+    const filename = downloadUraianCsvFile({
+      rows: uraianRows,
+      itemCount: uraianItemCount,
+      examTitle: uraianExamTitle,
+      subMode: uraianSubMode,
+      scaleMin: uraianScaleMin,
+      itemMaxScores: uraianItemMaxScores,
+    });
+    setUraianClipboardFallback('');
+    setUraianStatusMessage(`File CSV "${filename}" berhasil diunduh.`);
+  }
+
+  async function handleCopyUraianTable() {
+    if (uraianRows.length === 0) return;
+    const tsv = buildUraianTsvText({
+      rows: uraianRows,
+      itemCount: uraianItemCount,
+      examTitle: uraianExamTitle,
+      subMode: uraianSubMode,
+      scaleMin: uraianScaleMin,
+      itemMaxScores: uraianItemMaxScores,
+    });
+    try {
+      await navigator.clipboard.writeText(tsv);
+      setUraianClipboardFallback('');
+      setUraianStatusMessage(
+        'Tabel berhasil disalin. Tempel (Ctrl+V) di Excel atau Google Sheets.',
+      );
+    } catch {
+      setUraianClipboardFallback(tsv);
+      setUraianStatusMessage('Salin teks dari kotak di bawah lalu tempel di Excel.');
+    }
+  }
+
+  function handleExportUraianProjectData() {
+    const filename = exportUraianProjectDataFile({
+      examTitle: uraianExamTitle,
+      subMode: uraianSubMode,
+      itemCount: uraianItemCount,
+      scaleMin: uraianScaleMin,
+      defaultMaxScore: uraianDefaultMax,
+      itemMaxScores: uraianItemMaxScores,
+      rows: uraianRows,
+    });
+    setUraianStatusMessage(`File data "${filename}" berhasil disimpan.`);
+  }
+
+  function handleImportUraianProjectData(rawText: string) {
+    try {
+      const loaded = parseUraianProjectDataFile(rawText);
+      const maxId = loaded.rows.reduce((acc, r) => Math.max(acc, r.id || 0), 0);
+      setUraianExamTitle(loaded.examTitle);
+      setUraianSubMode(loaded.subMode);
+      setUraianItemCount(loaded.itemCount);
+      setUraianScaleMin(loaded.scaleMin);
+      setUraianDefaultMax(loaded.defaultMaxScore);
+      setUraianItemMaxScores(loaded.itemMaxScores);
+      setUraianRows(loaded.rows);
+      setUraianSeq(maxId);
+      setUraianSelectedId(loaded.rows[0]?.id ?? null);
+      setUraianCurrentItemIdx(
+        loaded.rows[0]
+          ? firstEmptyScoreIndex(loaded.rows[0].scores, loaded.itemCount)
+          : 0,
+      );
+      setUraianLastDeleted(null);
+      setUraianClipboardFallback('');
+      setUraianStatusMessage(
+        `File data dibuka: ${loaded.rows.length} peserta × ${loaded.itemCount} butir.`,
+      );
+    } catch {
+      setUraianStatusMessage(
+        'Gagal membuka file data. Pastikan file berformat .json hasil simpan angket/uraian.',
+      );
+    }
+  }
+
+  function handleConfirmUraianExcelImport(payload: UraianExcelImportPayload) {
+    const nextItemCount =
+      payload.mode === 'replace'
+        ? payload.itemCount
+        : Math.max(uraianItemCount, payload.itemCount);
+    const nextScaleMin =
+      payload.mode === 'replace'
+        ? payload.inferredMinScore
+        : Math.min(uraianScaleMin, payload.inferredMinScore);
+    const nextDefaultMax =
+      payload.mode === 'replace'
+        ? payload.inferredMaxScore
+        : Math.max(uraianDefaultMax, payload.inferredMaxScore);
+
+    const nextMaxScores =
+      payload.applyMaxScores && payload.maxScores
+        ? normalizeMaxScores(
+            payload.maxScores,
+            nextItemCount,
+            nextDefaultMax,
+            nextScaleMin,
+          )
+        : normalizeMaxScores(
+            uraianItemMaxScores,
+            nextItemCount,
+            nextDefaultMax,
+            nextScaleMin,
+          );
+
+    const startSeq = payload.mode === 'replace' ? 0 : uraianSeq;
+    const importedRows = buildImportedUraianRows(
+      payload.rows,
+      startSeq,
+      nextItemCount,
+    );
+    const nextSeq = startSeq + importedRows.length;
+
+    setUraianItemCount(nextItemCount);
+    setUraianScaleMin(nextScaleMin);
+    setUraianDefaultMax(nextDefaultMax);
+    setUraianItemMaxScores(nextMaxScores);
+
+    if (payload.mode === 'replace') {
+      setUraianRows(importedRows);
+      setUraianSelectedId(importedRows[0]?.id ?? null);
+      setUraianCurrentItemIdx(
+        importedRows[0]
+          ? firstEmptyScoreIndex(importedRows[0].scores, nextItemCount)
+          : 0,
+      );
+    } else {
+      setUraianRows((prev) => [...prev, ...importedRows]);
+      if (uraianSelectedId === null && importedRows[0]) {
+        setUraianSelectedId(importedRows[0].id);
+        setUraianCurrentItemIdx(
+          firstEmptyScoreIndex(importedRows[0].scores, nextItemCount),
+        );
+      }
+    }
+
+    setUraianSeq(nextSeq);
+    setUraianLastDeleted(null);
+    setUraianClipboardFallback('');
+    setUraianStatusMessage(
+      `Berhasil mengimpor ${importedRows.length} peserta × ${nextItemCount} butir dari Excel.`,
+    );
+  }
+
+  function handleLoadSampleUraianData() {
+    const count = 10;
+    const minVal = uraianSubMode === 'angket-4' || uraianSubMode === 'angket-5' ? 1 : 0;
+    const maxVal =
+      uraianSubMode === 'angket-4'
+        ? 4
+        : uraianSubMode === 'angket-5'
+          ? 5
+          : 10;
+    const maxList = new Array(count).fill(maxVal);
+
+    const roster: Array<{ nama: string; kelas: string; level: number }> = [
+      { nama: 'Aulia Rahman', kelas: 'VIII-A', level: 0.92 },
+      { nama: 'Nadia Kusuma', kelas: 'VIII-A', level: 0.87 },
+      { nama: 'Rafi Pratama', kelas: 'VIII-A', level: 0.82 },
+      { nama: 'Citra Dewi Lestari', kelas: 'VIII-B', level: 0.78 },
+      { nama: 'Dimas Saputra', kelas: 'VIII-B', level: 0.72 },
+      { nama: 'Siti Nurhaliza', kelas: 'VIII-A', level: 0.66 },
+      { nama: 'Bagus Santoso', kelas: 'VIII-B', level: 0.61 },
+      { nama: 'Putri Maharani', kelas: 'VIII-B', level: 0.54 },
+      { nama: 'Hendra Wijaya', kelas: 'VIII-C', level: 0.48 },
+      { nama: 'Tari Melati', kelas: 'VIII-C', level: 0.42 },
+      { nama: 'Fajar Hidayat', kelas: 'VIII-C', level: 0.36 },
+      { nama: 'Rizky Maulana', kelas: 'VIII-C', level: 0.3 },
+    ];
+
+    let nextId = uraianSeq;
+    const created: UraianStudentRow[] = roster.map((p, sIdx) => {
+      nextId += 1;
+      const scores: ScoreValue[] = Array.from({ length: count }, (_, qIdx) => {
+        const span = maxVal - minVal;
+        const jitter = ((sIdx * 3 + qIdx * 5) % 5) - 2;
+        const raw = Math.round(minVal + p.level * span + jitter * 0.45);
+        return Math.min(maxVal, Math.max(minVal, raw));
+      });
+      return {
+        id: nextId,
+        nama: p.nama,
+        kelas: p.kelas,
+        scores,
+      };
+    });
+
+    setUraianItemCount(count);
+    setUraianScaleMin(minVal);
+    setUraianDefaultMax(maxVal);
+    setUraianItemMaxScores(maxList);
+    setUraianExamTitle(
+      (prev) =>
+        prev ||
+        (uraianSubMode === 'uraian'
+          ? 'Penilaian Uraian IPA'
+          : 'Angket Motivasi Belajar'),
+    );
+    setUraianSeq(nextId);
+    setUraianRows(created);
+    setUraianSelectedId(created[0].id);
+    setUraianCurrentItemIdx(firstEmptyScoreIndex(created[0].scores, count));
+    setUraianStatusMessage(
+      `Contoh data ${created.length} peserta × ${count} butir berhasil dimuat.`,
+    );
   }
 
   return (
-    <div id="top" className="min-h-screen bg-[#F4F6F5] text-[#14211C] dark:bg-[#0E1411] dark:text-[#E6EEE9]">
-      <TopBar hasRows={rows.length > 0} onDownloadExcel={handleDownloadExcel} />
+    <div
+      id="top"
+      className="min-h-screen bg-[#F4F6F5] text-[#14211C] dark:bg-[#0E1411] dark:text-[#E6EEE9]"
+    >
+      <SplashIntro />
+      <TopBar
+        activeLayout={activeLayout}
+        hasRows={
+          activeLayout === 'abc'
+            ? rows.length > 0
+            : activeLayout === 'uraian'
+              ? uraianRows.length > 0
+              : true
+        }
+        onSelectLayout={handleNavigateLayout}
+        onDownloadExcel={
+          activeLayout === 'uraian'
+            ? handleDownloadUraianExcel
+            : handleDownloadExcel
+        }
+      />
 
       <main className="mx-auto flex max-w-[1280px] flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-balance text-2xl font-bold tracking-tight text-[#14211C] sm:text-3xl dark:text-[#E6EEE9]">
-              Rekap Lembar Jawaban Siswa
-            </h1>
-            <p className="max-w-2xl text-sm text-[#52635C] sm:text-base dark:text-[#9AAAA2]">
-              Atur jumlah butir soal hingga lebih dari 30 nomor, masukkan nama
-              siswa beserta jawabannya, lalu unduh hasilnya langsung sebagai
-              file Excel (.xlsx).
-            </p>
-          </div>
-          <PWAInstallBar />
-        </div>
+        {activeLayout === 'beranda' && (
+          <HomeBerandaSection
+            abcRowsCount={rows.length}
+            abcQuestionCount={questionCount}
+            abcExamTitle={examTitle}
+            uraianRowsCount={uraianRows.length}
+            uraianItemCount={uraianItemCount}
+            uraianExamTitle={uraianExamTitle}
+            darkMode={darkMode}
+            buttonStyle={buttonStyle}
+            onToggleDarkMode={() => setDarkMode((d) => !d)}
+            onChangeButtonStyle={setButtonStyle}
+            onSelectLayout={handleNavigateLayout}
+          />
+        )}
 
-        <ConfigAndStudentSection
-          questionCount={questionCount}
-          examTitle={examTitle}
-          answerKey={answerKey}
-          rows={rows}
-          selectedId={selectedId}
-          nameInputRef={nameInputRef}
-          onChangeQuestionCount={setQuestionCount}
-          onChangeExamTitle={setExamTitle}
-          onChangeAnswerKey={setAnswerKey}
-          onAddStudent={handleAddStudent}
-          onAddMultipleStudents={handleAddMultipleStudents}
-          onSelectStudent={handleSelectStudent}
-          onRemoveStudent={handleRemoveRow}
-        />
+        {activeLayout === 'abc' && (
+          <>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateLayout('beranda')}
+                    className="btn-gesture btn-surface-secondary inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-semibold whitespace-nowrap"
+                  >
+                    <ArrowLeft className="btn-nudge-left h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>Kembali ke Beranda</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateLayout('uraian')}
+                    className="btn-gesture btn-surface-secondary inline-flex min-h-[36px] cursor-pointer items-center rounded-xl px-3 py-1 text-xs font-semibold whitespace-nowrap"
+                  >
+                    Pindah ke Mode Angket / Uraian
+                  </button>
+                </div>
 
-        <AnswerEntrySection
-          rows={rows}
-          questionCount={questionCount}
-          selectedId={selectedId}
-          currentQuestionIdx={currentQuestionIdx}
-          onSelectStudent={handleSelectStudent}
-          onSelectQuestion={setCurrentQuestionIdx}
-          onSetAnswer={handleSetAnswer}
-          onApplyBulkAnswers={handleApplyBulkAnswers}
-          onRemoveStudent={handleRemoveRow}
-          onFocusAddStudent={() => nameInputRef.current?.focus()}
-        />
+                <h1 className="text-balance text-2xl font-bold tracking-tight text-[#14211C] sm:text-3xl dark:text-[#E6EEE9]">
+                  Rekap Lembar Jawaban ABC (Pilihan Ganda)
+                </h1>
+                <p className="max-w-2xl text-sm text-[#52635C] sm:text-base dark:text-[#9AAAA2]">
+                  Atur jumlah butir soal hingga 200 nomor, masukkan kunci dan
+                  jawaban siswa, unduh Excel (.xlsx), serta lihat 7 hasil olah
+                  data butir soal.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <ButtonStylePicker
+                  compact
+                  buttonStyle={buttonStyle}
+                  onChangeButtonStyle={setButtonStyle}
+                />
+                <PWAInstallBar />
+              </div>
+            </div>
 
-        <RecapTableSection
-          rows={rows}
-          questionCount={questionCount}
-          selectedId={selectedId}
-          answerKey={answerKey}
-          darkMode={darkMode}
-          statusMessage={statusMessage}
-          canUndoDelete={lastDeleted !== null}
-          clipboardFallbackText={clipboardFallbackText}
-          onToggleDarkMode={() => setDarkMode((d) => !d)}
-          onSelectStudent={handleSelectStudent}
-          onUpdateRowMeta={handleUpdateRowMeta}
-          onUpdateCell={handleUpdateCell}
-          onRemoveRow={handleRemoveRow}
-          onUndoDelete={handleUndoDelete}
-          onPreviewExcel={handleOpenPreview}
-          onDownloadExcel={handleDownloadExcel}
-          onDownloadCsv={handleDownloadCsv}
-          onCopyTable={handleCopyTable}
-          onClearAll={handleClearAll}
-          onLoadSampleData={handleLoadSampleData}
-        />
+            <ConfigAndStudentSection
+              questionCount={questionCount}
+              examTitle={examTitle}
+              answerKey={answerKey}
+              rows={rows}
+              selectedId={selectedId}
+              nameInputRef={nameInputRef}
+              onChangeQuestionCount={setQuestionCount}
+              onChangeExamTitle={setExamTitle}
+              onChangeAnswerKey={setAnswerKey}
+              onAddStudent={handleAddStudent}
+              onAddMultipleStudents={handleAddMultipleStudents}
+              onSelectStudent={handleSelectStudent}
+              onRemoveStudent={handleRemoveRow}
+              onExportProjectData={handleExportProjectData}
+              onImportProjectData={handleImportProjectData}
+              onOpenExcelImport={() => setIsAbcImportOpen(true)}
+            />
+
+            <AnswerEntrySection
+              rows={rows}
+              questionCount={questionCount}
+              selectedId={selectedId}
+              currentQuestionIdx={currentQuestionIdx}
+              onSelectStudent={handleSelectStudent}
+              onSelectQuestion={setCurrentQuestionIdx}
+              onSetAnswer={handleSetAnswer}
+              onApplyBulkAnswers={handleApplyBulkAnswers}
+              onRemoveStudent={handleRemoveRow}
+              onFocusAddStudent={() => nameInputRef.current?.focus()}
+            />
+
+            <RecapTableSection
+              rows={rows}
+              questionCount={questionCount}
+              selectedId={selectedId}
+              answerKey={answerKey}
+              darkMode={darkMode}
+              statusMessage={statusMessage}
+              canUndoDelete={lastDeleted !== null}
+              clipboardFallbackText={clipboardFallbackText}
+              onToggleDarkMode={() => setDarkMode((d) => !d)}
+              onSelectStudent={handleSelectStudent}
+              onUpdateRowMeta={handleUpdateRowMeta}
+              onUpdateCell={handleUpdateCell}
+              onRemoveRow={handleRemoveRow}
+              onUndoDelete={handleUndoDelete}
+              onPreviewExcel={handleOpenPreview}
+              onDownloadExcel={handleDownloadExcel}
+              onDownloadCsv={handleDownloadCsv}
+              onCopyTable={handleCopyTable}
+              onClearAll={handleClearAll}
+              onLoadSampleData={handleLoadSampleData}
+            />
+
+            <ItemAnalysisSection
+              examTitle={examTitle}
+              rows={rows}
+              questionCount={questionCount}
+              answerKey={answerKey}
+              onLoadSampleData={handleLoadSampleData}
+              onFocusConfig={() => {
+                document
+                  .getElementById('pengaturan')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              onExportProjectData={handleExportProjectData}
+            />
+
+            <ClassScoreChartsSection
+              id="visualisasi-ringkas"
+              mode="abc"
+              darkMode={darkMode}
+              students={abcChartData.students}
+              hasScoreData={abcChartData.hasScoreData}
+              emptyReason="Tambahkan siswa dan atur Kunci Jawaban terlebih dahulu agar rata-rata skor per kelas dan distribusi nilai dapat ditampilkan."
+              onLoadSampleData={handleLoadSampleData}
+            />
+          </>
+        )}
+
+        {activeLayout === 'uraian' && (
+          <>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateLayout('beranda')}
+                    className="btn-gesture btn-surface-secondary inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-semibold whitespace-nowrap"
+                  >
+                    <ArrowLeft className="btn-nudge-left h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>Kembali ke Beranda</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNavigateLayout('abc')}
+                    className="btn-gesture btn-surface-secondary inline-flex min-h-[36px] cursor-pointer items-center rounded-xl px-3 py-1 text-xs font-semibold whitespace-nowrap"
+                  >
+                    Pindah ke Mode Pilihan Ganda (ABC)
+                  </button>
+                </div>
+
+                <h1 className="text-balance text-2xl font-bold tracking-tight text-[#14211C] sm:text-3xl dark:text-[#E6EEE9]">
+                  Rekap Skor Angket &amp; Soal Uraian
+                </h1>
+                <p className="max-w-2xl text-sm text-[#52635C] sm:text-base dark:text-[#9AAAA2]">
+                  Kelola skor butir uraian (bobot per nomor) maupun angket skala
+                  Likert (1–4, 1–5), ekspor Excel, dan hitung reliabilitas Alpha
+                  Cronbach hingga validitas butir.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <ButtonStylePicker
+                  compact
+                  buttonStyle={buttonStyle}
+                  onChangeButtonStyle={setButtonStyle}
+                />
+                <PWAInstallBar />
+              </div>
+            </div>
+
+            <UraianConfigAndStudentSection
+              itemCount={uraianItemCount}
+              examTitle={uraianExamTitle}
+              subMode={uraianSubMode}
+              scaleMin={uraianScaleMin}
+              defaultMaxScore={uraianDefaultMax}
+              itemMaxScores={uraianItemMaxScores}
+              rows={uraianRows}
+              selectedId={uraianSelectedId}
+              nameInputRef={uraianNameInputRef}
+              onChangeItemCount={handleChangeUraianItemCount}
+              onChangeExamTitle={setUraianExamTitle}
+              onSelectPresetMode={handleSelectUraianPresetMode}
+              onChangeDefaultMaxScore={handleChangeUraianDefaultMax}
+              onChangeItemMaxScore={handleChangeUraianItemMax}
+              onAddStudent={handleAddUraianStudent}
+              onAddMultipleStudents={handleAddMultipleUraianStudents}
+              onSelectStudent={handleSelectUraianStudent}
+              onRemoveStudent={handleRemoveUraianRow}
+              onExportProjectData={handleExportUraianProjectData}
+              onImportProjectData={handleImportUraianProjectData}
+              onOpenExcelImport={() => setIsUraianImportOpen(true)}
+            />
+
+            <UraianEntrySection
+              rows={uraianRows}
+              itemCount={uraianItemCount}
+              scaleMin={uraianScaleMin}
+              defaultMaxScore={uraianDefaultMax}
+              itemMaxScores={uraianItemMaxScores}
+              selectedId={uraianSelectedId}
+              currentItemIdx={uraianCurrentItemIdx}
+              onSelectStudent={handleSelectUraianStudent}
+              onSelectItem={setUraianCurrentItemIdx}
+              onSetScore={handleSetUraianScore}
+              onApplyBulkScores={handleApplyBulkUraianScores}
+              onRemoveStudent={handleRemoveUraianRow}
+              onFocusAddStudent={() => uraianNameInputRef.current?.focus()}
+            />
+
+            <UraianRecapTableSection
+              rows={uraianRows}
+              itemCount={uraianItemCount}
+              scaleMin={uraianScaleMin}
+              defaultMaxScore={uraianDefaultMax}
+              itemMaxScores={uraianItemMaxScores}
+              selectedId={uraianSelectedId}
+              darkMode={darkMode}
+              statusMessage={uraianStatusMessage}
+              canUndoDelete={uraianLastDeleted !== null}
+              clipboardFallbackText={uraianClipboardFallback}
+              onToggleDarkMode={() => setDarkMode((d) => !d)}
+              onSelectStudent={handleSelectUraianStudent}
+              onUpdateRowMeta={handleUpdateUraianRowMeta}
+              onUpdateCell={handleUpdateUraianCell}
+              onRemoveRow={handleRemoveUraianRow}
+              onUndoDelete={handleUndoUraianDelete}
+              onPreviewExcel={() => {
+                if (uraianRows.length > 0) setIsUraianPreviewOpen(true);
+              }}
+              onDownloadExcel={handleDownloadUraianExcel}
+              onDownloadCsv={handleDownloadUraianCsv}
+              onCopyTable={handleCopyUraianTable}
+              onClearAll={handleClearAllUraian}
+              onLoadSampleData={handleLoadSampleUraianData}
+            />
+
+            <UraianAnalysisSection
+              examTitle={uraianExamTitle}
+              rows={uraianRows}
+              itemCount={uraianItemCount}
+              subMode={uraianSubMode}
+              scaleMin={uraianScaleMin}
+              itemMaxScores={uraianItemMaxScores}
+              onLoadSampleData={handleLoadSampleUraianData}
+              onExportProjectData={handleExportUraianProjectData}
+            />
+
+            <ClassScoreChartsSection
+              id="uraian-visualisasi"
+              mode="uraian"
+              darkMode={darkMode}
+              students={uraianChartData.students}
+              hasScoreData={uraianChartData.hasScoreData}
+              emptyReason="Tambahkan peserta dan isi minimal satu skor butir agar rata-rata skor per kelas dan distribusi nilai dapat ditampilkan."
+              onLoadSampleData={handleLoadSampleUraianData}
+            />
+          </>
+        )}
       </main>
 
       <ExcelPreviewModal
-        isOpen={isPreviewOpen}
-        preview={excelPreviewData}
-        onClose={() => setIsPreviewOpen(false)}
+        isOpen={isAbcPreviewOpen}
+        preview={abcExcelPreviewData}
+        onClose={() => setIsAbcPreviewOpen(false)}
         onConfirmDownload={handleDownloadExcel}
+      />
+
+      <ExcelPreviewModal
+        isOpen={isUraianPreviewOpen}
+        preview={uraianExcelPreviewData}
+        onClose={() => setIsUraianPreviewOpen(false)}
+        onConfirmDownload={handleDownloadUraianExcel}
+      />
+
+      <ExcelImportModal
+        isOpen={isAbcImportOpen}
+        targetMode="abc"
+        currentItemCount={questionCount}
+        examTitle={examTitle}
+        hasExistingRows={rows.length > 0}
+        onClose={() => setIsAbcImportOpen(false)}
+        onConfirmAbc={handleConfirmAbcExcelImport}
+      />
+
+      <ExcelImportModal
+        isOpen={isUraianImportOpen}
+        targetMode="uraian"
+        currentItemCount={uraianItemCount}
+        currentScaleMin={uraianScaleMin}
+        currentDefaultMax={uraianDefaultMax}
+        examTitle={uraianExamTitle}
+        hasExistingRows={uraianRows.length > 0}
+        onClose={() => setIsUraianImportOpen(false)}
+        onConfirmUraian={handleConfirmUraianExcelImport}
       />
     </div>
   );

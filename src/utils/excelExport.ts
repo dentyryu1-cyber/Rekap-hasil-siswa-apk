@@ -4,6 +4,7 @@ import { Share } from '@capacitor/share';
 import * as XLSX from 'xlsx';
 import type { AnswerLetter, StudentRow } from '../types/sheet';
 import { computeStudentStats, normalizeAnswers } from './answerParser';
+import { computeFullItemAnalysis, detectOptionMode } from './itemAnalysis';
 
 export interface ExportPayload {
   rows: StudentRow[];
@@ -25,9 +26,11 @@ export interface ExcelPreviewWorkbook {
   studentCount: number;
   mainSheet: ExcelSheetPreview;
   summarySheet: ExcelSheetPreview;
+  analysisSheet: ExcelSheetPreview | null;
+  groupsSheet: ExcelSheetPreview | null;
 }
 
-function makeSlug(title: string): string {
+export function makeSlug(title: string): string {
   const clean = title
     .toLowerCase()
     .trim()
@@ -49,7 +52,7 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-function triggerFileDownload(blob: Blob, filename: string): void {
+export function triggerFileDownload(blob: Blob, filename: string): void {
   if (Capacitor.isNativePlatform()) {
     void (async () => {
       try {
@@ -197,6 +200,103 @@ export function buildExcelWorkbookData({
     ]);
   }
 
+  const optionMode = detectOptionMode(rows, questionCount, answerKey);
+  const analysis = computeFullItemAnalysis(
+    rows,
+    questionCount,
+    answerKey,
+    optionMode,
+  );
+
+  let analysisSheet: ExcelSheetPreview | null = null;
+  let groupsSheet: ExcelSheetPreview | null = null;
+
+  if (analysis.hasSufficientData) {
+    const analysisHeaders: (string | number)[] = [
+      'No Soal',
+      'Kunci',
+      'Jml Benar',
+      'Kesukaran (P)',
+      'Tingkat Kesukaran',
+      'Benar Unggul',
+      'Benar Asor',
+      'Daya Pembeda (D)',
+      'Kategori DP',
+      'Korelasi (r)',
+      'r tabel',
+      'Validitas',
+      'Kualitas Pengecoh',
+      'Kualitas Akhir',
+    ];
+    const analysisRows: (string | number)[][] = analysis.items
+      .filter((it) => it.hasKey)
+      .map((it) => [
+        it.questionNumber,
+        it.key,
+        it.correctCount,
+        it.difficultyIndex,
+        it.difficultyCategory,
+        it.upperCorrect,
+        it.lowerCorrect,
+        it.discriminationIndex,
+        it.discriminationCategory,
+        it.correlationR !== null ? it.correlationR : 0,
+        analysis.reliability.rTable !== null ? analysis.reliability.rTable : '-',
+        it.validityStatus,
+        it.distractorSummary,
+        it.finalDecision,
+      ]);
+
+    analysisRows.push([
+      'RELIABILITAS KR-20',
+      analysis.reliability.kr20 !== null ? analysis.reliability.kr20 : '-',
+      analysis.reliability.category,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ]);
+
+    analysisSheet = {
+      name: 'Analisis Butir',
+      headers: analysisHeaders,
+      rows: analysisRows,
+    };
+
+    groupsSheet = {
+      name: 'Kel. Unggul & Asor',
+      headers: [
+        'Peringkat',
+        'Nama Siswa',
+        'Kelas',
+        'Skor Benar',
+        'Skor Maks',
+        'Nilai (%)',
+        'Kelompok (27%)',
+      ],
+      rows: analysis.rankedStudents.map((st) => [
+        st.rank,
+        st.nama,
+        st.kelas,
+        st.score,
+        st.maxScore,
+        st.scorePercent,
+        st.group === 'Unggul'
+          ? 'Unggul (27% Atas)'
+          : st.group === 'Asor'
+            ? 'Asor (27% Bawah)'
+            : 'Tengah',
+      ]),
+    };
+  }
+
   const dateStr = new Date().toISOString().slice(0, 10);
   const filename = `rekap-${makeSlug(examTitle)}-${dateStr}.xlsx`;
 
@@ -215,6 +315,8 @@ export function buildExcelWorkbookData({
       headers: summaryHeaders,
       rows: summaryRows,
     },
+    analysisSheet,
+    groupsSheet,
   };
 }
 
@@ -277,6 +379,47 @@ export function downloadExcelWorkbook(payload: ExportPayload): string {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsMain, data.mainSheet.name);
   XLSX.utils.book_append_sheet(wb, wsSummary, data.summarySheet.name);
+
+  if (data.analysisSheet) {
+    const wsAnalysis = XLSX.utils.aoa_to_sheet([
+      data.analysisSheet.headers,
+      ...data.analysisSheet.rows,
+    ]);
+    wsAnalysis['!cols'] = [
+      { wch: 18 },
+      { wch: 8 },
+      { wch: 11 },
+      { wch: 14 },
+      { wch: 17 },
+      { wch: 13 },
+      { wch: 12 },
+      { wch: 16 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 13 },
+      { wch: 17 },
+      { wch: 15 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsAnalysis, data.analysisSheet.name);
+  }
+
+  if (data.groupsSheet) {
+    const wsGroups = XLSX.utils.aoa_to_sheet([
+      data.groupsSheet.headers,
+      ...data.groupsSheet.rows,
+    ]);
+    wsGroups['!cols'] = [
+      { wch: 10 },
+      { wch: 26 },
+      { wch: 10 },
+      { wch: 11 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 19 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsGroups, data.groupsSheet.name);
+  }
 
   const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   const blob = new Blob([buffer], {

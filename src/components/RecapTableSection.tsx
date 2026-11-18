@@ -186,7 +186,7 @@ export function RecapTableSection({
             type="button"
             onClick={onToggleDarkMode}
             aria-label={darkMode ? 'Aktifkan mode terang' : 'Aktifkan mode gelap'}
-            className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-[#D4DDD8] bg-[#F8FAF9] px-3 text-xs font-semibold whitespace-nowrap text-[#2B3B35] transition-colors hover:bg-[#EAF2EE] dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#C5D3CC] dark:hover:bg-[#24322B]"
+            className="btn-gesture btn-surface-secondary inline-flex h-10 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-xs font-semibold whitespace-nowrap"
           >
             {darkMode ? (
               <>
@@ -204,12 +204,12 @@ export function RecapTableSection({
       </div>
 
       {/* Action buttons */}
-      <div className="flex flex-wrap items-center gap-2 border-y border-[#E3EAE6] py-3 dark:border-[#24322B]">
+      <div className="flex flex-wrap items-center gap-2.5 border-y border-[#E3EAE6] py-3.5 dark:border-[#24322B]">
         <button
           type="button"
           onClick={onPreviewExcel}
           disabled={rows.length === 0}
-          className="inline-flex min-h-[42px] shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-[#1B6B4F] bg-[#EDF5F1] px-3.5 py-2 text-sm font-semibold whitespace-nowrap text-[#144332] transition-colors hover:bg-[#DCEEE6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] disabled:cursor-not-allowed disabled:opacity-45 dark:border-[#4AC294] dark:bg-[#193026] dark:text-[#A6E8CE] dark:hover:bg-[#214033]"
+          className="btn-gesture btn-surface-secondary inline-flex min-h-[42px] shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-45"
         >
           <Eye className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>Pratinjau Excel</span>
@@ -219,9 +219,9 @@ export function RecapTableSection({
           type="button"
           onClick={onDownloadExcel}
           disabled={rows.length === 0}
-          className="inline-flex min-h-[42px] shrink-0 cursor-pointer items-center gap-2 rounded-lg bg-[#1B6B4F] px-4 py-2 text-sm font-semibold whitespace-nowrap text-white transition-colors hover:bg-[#15563F] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] disabled:cursor-not-allowed disabled:opacity-45 dark:bg-[#4AC294] dark:text-[#0B1712] dark:hover:bg-[#3BB084]"
+          className="btn-gesture btn-surface-primary inline-flex min-h-[42px] shrink-0 cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-45"
         >
-          <FileSpreadsheet className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <FileSpreadsheet className="btn-nudge-up h-4 w-4 shrink-0" aria-hidden="true" />
           <span>Unduh Excel (.xlsx)</span>
         </button>
 
@@ -229,9 +229,9 @@ export function RecapTableSection({
           type="button"
           onClick={onDownloadCsv}
           disabled={rows.length === 0}
-          className="inline-flex min-h-[42px] shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-[#D4DDD8] bg-white px-3.5 py-2 text-sm font-semibold whitespace-nowrap text-[#14211C] transition-colors hover:bg-[#F1F5F3] disabled:cursor-not-allowed disabled:opacity-45 dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#E6EEE9] dark:hover:bg-[#24322B]"
+          className="btn-gesture btn-surface-secondary inline-flex min-h-[42px] shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-45"
         >
-          <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <FileText className="btn-nudge-up h-4 w-4 shrink-0" aria-hidden="true" />
           <span>Unduh CSV</span>
         </button>
 
@@ -239,7 +239,7 @@ export function RecapTableSection({
           type="button"
           onClick={onCopyTable}
           disabled={rows.length === 0}
-          className="inline-flex min-h-[42px] shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-[#D4DDD8] bg-white px-3.5 py-2 text-sm font-semibold whitespace-nowrap text-[#14211C] transition-colors hover:bg-[#F1F5F3] disabled:cursor-not-allowed disabled:opacity-45 dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#E6EEE9] dark:hover:bg-[#24322B]"
+          className="btn-gesture btn-surface-secondary inline-flex min-h-[42px] shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-45"
         >
           <Copy className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>Salin tabel</span>
@@ -249,11 +249,7 @@ export function RecapTableSection({
           type="button"
           onClick={handleClearClick}
           disabled={rows.length === 0}
-          className={`inline-flex min-h-[42px] shrink-0 cursor-pointer items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-semibold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-45 sm:ml-auto ${
-            confirmClear
-              ? 'border-[#B42318] bg-[#B42318] text-white'
-              : 'border-[#D4DDD8] bg-white text-[#9E2A22] hover:bg-[#FEF3F2] dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#F97066] dark:hover:bg-[#2E1B1A]'
-          }`}
+          className={`btn-gesture btn-surface-danger inline-flex min-h-[42px] shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-45 sm:ml-auto`}
         >
           <Trash2 className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>
@@ -276,7 +272,7 @@ export function RecapTableSection({
           <button
             type="button"
             onClick={onLoadSampleData}
-            className="min-h-[40px] cursor-pointer rounded-lg border border-[#D4DDD8] bg-white px-4 py-2 text-sm font-semibold text-[#14211C] transition-colors hover:bg-[#EAF2EE] dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#E6EEE9] dark:hover:bg-[#24322B]"
+            className="btn-gesture btn-surface-primary min-h-[40px] cursor-pointer rounded-xl px-4 py-2 text-sm font-semibold"
           >
             Muat Contoh Data (40 Butir Soal)
           </button>

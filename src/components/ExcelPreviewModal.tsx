@@ -15,7 +15,9 @@ export function ExcelPreviewModal({
   onClose,
   onConfirmDownload,
 }: ExcelPreviewModalProps) {
-  const [activeTab, setActiveTab] = useState<'main' | 'summary'>('main');
+  const [activeTab, setActiveTab] = useState<
+    'main' | 'summary' | 'analysis' | 'groups'
+  >('main');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -32,8 +34,19 @@ export function ExcelPreviewModal({
 
   if (!isOpen || !preview) return null;
 
+  const sheetCount =
+    2 + (preview.analysisSheet ? 1 : 0) + (preview.groupsSheet ? 1 : 0);
+
   const activeSheet =
-    activeTab === 'main' ? preview.mainSheet : preview.summarySheet;
+    activeTab === 'main'
+      ? preview.mainSheet
+      : activeTab === 'summary'
+        ? preview.summarySheet
+        : activeTab === 'analysis' && preview.analysisSheet
+          ? preview.analysisSheet
+          : activeTab === 'groups' && preview.groupsSheet
+            ? preview.groupsSheet
+            : preview.mainSheet;
 
   return (
     <div
@@ -58,7 +71,7 @@ export function ExcelPreviewModal({
             </h2>
             <p className="font-mono-tabular mt-0.5 truncate text-xs text-[#52635C] dark:text-[#9AAAA2]">
               {preview.filename} · {preview.studentCount} siswa ·{' '}
-              {preview.questionCount} butir soal · 2 lembar kerja
+              {preview.questionCount} butir soal · {sheetCount} lembar kerja
             </p>
           </div>
           <button
@@ -76,7 +89,7 @@ export function ExcelPreviewModal({
           <div
             role="tablist"
             aria-label="Pilih lembar kerja Excel"
-            className="flex items-center gap-1 rounded-lg bg-[#E9EFEC] p-1 dark:bg-[#1B2520]"
+            className="flex flex-wrap items-center gap-1 rounded-lg bg-[#E9EFEC] p-1 dark:bg-[#1B2520]"
           >
             <button
               type="button"
@@ -104,6 +117,36 @@ export function ExcelPreviewModal({
             >
               Sheet 2: {preview.summarySheet.name}
             </button>
+            {preview.analysisSheet && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'analysis'}
+                onClick={() => setActiveTab('analysis')}
+                className={`cursor-pointer rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+                  activeTab === 'analysis'
+                    ? 'bg-white text-[#14211C] shadow-xs dark:bg-[#24332C] dark:text-[#E6EEE9]'
+                    : 'text-[#52635C] hover:text-[#14211C] dark:text-[#9AAAA2] dark:hover:text-[#E6EEE9]'
+                }`}
+              >
+                Sheet 3: {preview.analysisSheet.name}
+              </button>
+            )}
+            {preview.groupsSheet && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'groups'}
+                onClick={() => setActiveTab('groups')}
+                className={`cursor-pointer rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+                  activeTab === 'groups'
+                    ? 'bg-white text-[#14211C] shadow-xs dark:bg-[#24332C] dark:text-[#E6EEE9]'
+                    : 'text-[#52635C] hover:text-[#14211C] dark:text-[#9AAAA2] dark:hover:text-[#E6EEE9]'
+                }`}
+              >
+                Sheet 4: {preview.groupsSheet.name}
+              </button>
+            )}
           </div>
           <span className="text-xs text-[#52635C] dark:text-[#9AAAA2]">
             Tampilan sesuai isi file `.xlsx` yang akan diunduh
@@ -149,9 +192,9 @@ export function ExcelPreviewModal({
                 {activeSheet.rows.map((row, rowIdx) => {
                   const isKeyRow =
                     activeTab === 'main' &&
-                    preview.hasKey &&
                     rowIdx === 0 &&
-                    row[1] === 'KUNCI JAWABAN';
+                    ((preview.hasKey && row[1] === 'KUNCI JAWABAN') ||
+                      row[1] === 'SKOR MAKSIMUM');
 
                   return (
                     <tr
@@ -216,16 +259,16 @@ export function ExcelPreviewModal({
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[40px] cursor-pointer rounded-lg border border-[#D4DDD8] bg-white px-4 py-2 text-sm font-semibold text-[#14211C] transition-colors hover:bg-[#F1F5F3] dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#E6EEE9] dark:hover:bg-[#24322B]"
+            className="btn-gesture btn-surface-secondary min-h-[40px] cursor-pointer rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap"
           >
             Tutup
           </button>
           <button
             type="button"
             onClick={onConfirmDownload}
-            className="inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg bg-[#1B6B4F] px-4 py-2 text-sm font-semibold whitespace-nowrap text-white transition-colors hover:bg-[#15563F] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] dark:bg-[#4AC294] dark:text-[#0B1712] dark:hover:bg-[#3BB084]"
+            className="btn-gesture btn-surface-primary inline-flex min-h-[40px] cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F]"
           >
-            <FileSpreadsheet className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <FileSpreadsheet className="btn-nudge-up h-4 w-4 shrink-0" aria-hidden="true" />
             <span>Unduh Excel (.xlsx)</span>
           </button>
         </div>

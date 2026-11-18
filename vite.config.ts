@@ -18,10 +18,10 @@ export default defineConfig(() => {
         includeAssets: ['apple-touch-icon.png', 'icon.svg'],
         manifest: {
           id: basePath,
-          name: 'Rekap Lembar Jawaban',
-          short_name: 'Rekap LJK',
+          name: 'rekapinJx',
+          short_name: 'rekapinJx',
           description:
-            'Aplikasi rekap lembar jawaban siswa lebih dari 30 butir soal dengan ekspor langsung ke Excel (.xlsx).',
+            'rekapinJx: aplikasi rekap lembar jawaban pilihan ganda, angket, dan uraian dengan ekspor Excel (.xlsx) dan analisis butir.',
           theme_color: '#1B6B4F',
           background_color: '#F4F6F5',
           display: 'standalone',
@@ -49,6 +49,7 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
           runtimeCaching: [
             {

@@ -1,5 +1,14 @@
-import { useState, type FormEvent, type RefObject } from 'react';
-import { ChevronDown, Minus, Plus, Trash2, UserPlus } from 'lucide-react';
+import { useRef, useState, type ChangeEvent, type FormEvent, type RefObject } from 'react';
+import {
+  ChevronDown,
+  FileSpreadsheet,
+  FolderOpen,
+  Minus,
+  Plus,
+  Save,
+  Trash2,
+  UserPlus,
+} from 'lucide-react';
 import type { AnswerLetter, StudentRow } from '../types/sheet';
 import {
   countReadableTokens,
@@ -22,6 +31,9 @@ interface ConfigAndStudentSectionProps {
   onAddMultipleStudents: (items: Array<{ nama: string; kelas: string }>) => void;
   onSelectStudent: (id: number) => void;
   onRemoveStudent: (id: number) => void;
+  onExportProjectData: () => void;
+  onImportProjectData: (rawText: string) => void;
+  onOpenExcelImport: () => void;
 }
 
 const QUESTION_PRESETS = [20, 25, 30, 35, 40, 45, 50, 60, 100];
@@ -40,6 +52,9 @@ export function ConfigAndStudentSection({
   onAddMultipleStudents,
   onSelectStudent,
   onRemoveStudent,
+  onExportProjectData,
+  onImportProjectData,
+  onOpenExcelImport,
 }: ConfigAndStudentSectionProps) {
   const [nama, setNama] = useState('');
   const [kelas, setKelas] = useState('');
@@ -51,9 +66,23 @@ export function ConfigAndStudentSection({
 
   const [showKeyPanel, setShowKeyPanel] = useState(false);
   const [keyInputText, setKeyInputText] = useState('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const normKey = normalizeAnswers(answerKey, questionCount);
   const activeKeyCount = normKey.filter((k) => k !== '').length;
+
+  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        onImportProjectData(reader.result);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
 
   function handleNumericCountChange(raw: string) {
     if (raw === '') return;
@@ -130,7 +159,7 @@ export function ConfigAndStudentSection({
                   onChangeQuestionCount(Math.max(1, questionCount - 5))
                 }
                 aria-label="Kurangi 5 soal"
-                className="inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#D4DDD8] bg-[#F8FAF9] text-[#14211C] transition-colors hover:bg-[#E7EEEA] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#E6EEE9] dark:hover:bg-[#24322B]"
+                className="btn-gesture btn-surface-secondary inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F]"
               >
                 <Minus className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -150,7 +179,7 @@ export function ConfigAndStudentSection({
                   onChangeQuestionCount(Math.min(200, questionCount + 5))
                 }
                 aria-label="Tambah 5 soal"
-                className="inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-[#D4DDD8] bg-[#F8FAF9] text-[#14211C] transition-colors hover:bg-[#E7EEEA] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#E6EEE9] dark:hover:bg-[#24322B]"
+                className="btn-gesture btn-surface-secondary inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F]"
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -191,10 +220,8 @@ export function ConfigAndStudentSection({
                   key={preset}
                   type="button"
                   onClick={() => onChangeQuestionCount(preset)}
-                  className={`font-mono-tabular min-h-[36px] shrink-0 cursor-pointer rounded-md border px-2.5 py-1 text-xs font-semibold whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] ${
-                    active
-                      ? 'border-[#1B6B4F] bg-[#1B6B4F] text-white dark:border-[#4AC294] dark:bg-[#4AC294] dark:text-[#0B1712]'
-                      : 'border-[#D4DDD8] bg-[#F8FAF9] text-[#2B3B35] hover:border-[#1B6B4F]/50 hover:bg-[#EAF2EE] dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#C5D3CC] dark:hover:bg-[#23322B]'
+                  className={`btn-gesture font-mono-tabular min-h-[36px] shrink-0 cursor-pointer rounded-lg px-2.5 py-1 text-xs font-semibold whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] ${
+                    active ? 'btn-surface-primary' : 'btn-surface-secondary'
                   }`}
                 >
                   {preset} butir
@@ -246,7 +273,7 @@ export function ConfigAndStudentSection({
                   type="button"
                   onClick={handleApplyAnswerKey}
                   disabled={!keyInputText.trim()}
-                  className="h-10 shrink-0 cursor-pointer rounded-lg border border-[#1B6B4F] bg-[#1B6B4F] px-3.5 text-xs font-semibold whitespace-nowrap text-white transition-colors hover:bg-[#15563F] disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#4AC294] dark:bg-[#4AC294] dark:text-[#0B1712]"
+                  className="btn-gesture btn-surface-primary h-10 shrink-0 cursor-pointer rounded-xl px-3.5 text-xs font-semibold whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Simpan Kunci
                 </button>
@@ -276,6 +303,52 @@ export function ConfigAndStudentSection({
             </div>
           )}
         </div>
+
+        <div className="border-t border-[#E3EAE6] pt-3 dark:border-[#24322B]">
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold text-[#52635C] dark:text-[#9AAAA2]">
+              Berkas data tes (seperti Anates V4)
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={onExportProjectData}
+                className="btn-gesture btn-surface-secondary inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+              >
+                <Save className="btn-nudge-up h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span>Simpan File Data (.json)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="btn-gesture btn-surface-secondary inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+              >
+                <FolderOpen className="btn-nudge-up h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span>Buka File Data</span>
+              </button>
+              <button
+                type="button"
+                onClick={onOpenExcelImport}
+                className="btn-gesture btn-surface-primary inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+              >
+                <FileSpreadsheet className="btn-nudge-up h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span>Impor Excel (.xlsx)</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,application/json"
+                onChange={handleFileChange}
+                className="sr-only"
+                aria-label="Pilih file data tes JSON"
+              />
+            </div>
+            <p className="text-[11px] text-[#6B7C75] dark:text-[#8E9F97]">
+              Simpan kunci, daftar siswa, dan seluruh jawaban ke satu file agar
+              bisa dibuka kembali kapan saja.
+            </p>
+          </div>
+        </div>
       </section>
 
       {/* Step 2: Tambah Siswa */}
@@ -284,21 +357,32 @@ export function ConfigAndStudentSection({
         aria-labelledby="heading-siswa"
         className="flex flex-col gap-5 rounded-xl border border-[#D4DDD8] bg-white p-5 sm:p-6 lg:col-span-7 dark:border-[#28362F] dark:bg-[#161F1B]"
       >
-        <div className="flex items-center gap-3">
-          <span className="inline-grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#1B6B4F] text-sm font-bold text-white dark:bg-[#4AC294] dark:text-[#0B1712]">
-            2
-          </span>
-          <div>
-            <h2
-              id="heading-siswa"
-              className="text-base font-bold text-[#14211C] dark:text-[#E6EEE9]"
-            >
-              Tambah siswa
-            </h2>
-            <p className="text-xs text-[#52635C] dark:text-[#9AAAA2]">
-              Masukkan satu per satu atau tempel seluruh daftar absen sekaligus
-            </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="inline-grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#1B6B4F] text-sm font-bold text-white dark:bg-[#4AC294] dark:text-[#0B1712]">
+              2
+            </span>
+            <div>
+              <h2
+                id="heading-siswa"
+                className="text-base font-bold text-[#14211C] dark:text-[#E6EEE9]"
+              >
+                Tambah siswa
+              </h2>
+              <p className="text-xs text-[#52635C] dark:text-[#9AAAA2]">
+                Masukkan satu per satu, tempel daftar, atau impor dari file Excel
+              </p>
+            </div>
           </div>
+
+          <button
+            type="button"
+            onClick={onOpenExcelImport}
+            className="btn-gesture btn-surface-secondary inline-flex min-h-[36px] shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+          >
+            <FileSpreadsheet className="btn-nudge-up h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span>Impor dari Excel</span>
+          </button>
         </div>
 
         <form onSubmit={handleSingleSubmit} noValidate className="flex flex-col gap-3">
@@ -344,9 +428,9 @@ export function ConfigAndStudentSection({
             <div className="sm:col-span-3">
               <button
                 type="submit"
-                className="inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#1B6B4F] px-4 text-sm font-semibold whitespace-nowrap text-white transition-colors hover:bg-[#15563F] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] dark:bg-[#4AC294] dark:text-[#0B1712] dark:hover:bg-[#3BB084]"
+                className="btn-gesture btn-surface-primary inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F]"
               >
-                <UserPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <UserPlus className="btn-nudge-up h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>Tambah</span>
               </button>
             </div>
@@ -415,7 +499,7 @@ export function ConfigAndStudentSection({
                     type="button"
                     onClick={handleBulkStudentAdd}
                     disabled={!bulkStudentText.trim()}
-                    className="h-10 w-full cursor-pointer rounded-lg border border-[#1B6B4F] bg-[#1B6B4F] px-3 text-xs font-semibold whitespace-nowrap text-white transition-colors hover:bg-[#15563F] disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#4AC294] dark:bg-[#4AC294] dark:text-[#0B1712]"
+                    className="btn-gesture btn-surface-primary h-10 w-full cursor-pointer rounded-xl px-3 text-xs font-semibold whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Tambahkan Daftar
                   </button>
@@ -474,7 +558,7 @@ export function ConfigAndStudentSection({
                       type="button"
                       onClick={() => onRemoveStudent(row.id)}
                       aria-label={`Hapus siswa ${row.nama || `Siswa ${idx + 1}`}`}
-                      className="inline-flex min-h-[32px] shrink-0 cursor-pointer items-center gap-1 rounded-md border border-[#E6C7C4] bg-white px-2.5 py-1 text-xs font-semibold whitespace-nowrap text-[#B42318] transition-colors hover:bg-[#FEF3F2] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B42318] dark:border-[#5C2B27] dark:bg-[#1B1414] dark:text-[#F97066] dark:hover:bg-[#321B19]"
+                      className="btn-gesture btn-surface-danger inline-flex min-h-[32px] shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold whitespace-nowrap"
                     >
                       <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                       <span>Hapus</span>

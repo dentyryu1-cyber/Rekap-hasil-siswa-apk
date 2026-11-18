@@ -187,7 +187,7 @@ export function AnswerEntrySection({
           <button
             type="button"
             onClick={onFocusAddStudent}
-            className="min-h-[40px] cursor-pointer rounded-lg border border-[#D4DDD8] bg-white px-4 py-2 text-sm font-semibold text-[#14211C] transition-colors hover:bg-[#EAF2EE] dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#E6EEE9]"
+            className="btn-gesture btn-surface-primary min-h-[40px] cursor-pointer rounded-xl px-4 py-2 text-sm font-semibold"
           >
             Tambah Siswa Pertama
           </button>
@@ -225,9 +225,9 @@ export function AnswerEntrySection({
                 onClick={() =>
                   selectedIndex > 0 && onSelectStudent(rows[selectedIndex - 1].id)
                 }
-                className="inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-[#D4DDD8] bg-[#F8FAF9] px-3 py-2 text-xs font-semibold whitespace-nowrap text-[#14211C] transition-colors hover:bg-[#EAF2EE] disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#E6EEE9]"
+                className="btn-gesture btn-surface-secondary inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                <ChevronLeft className="btn-nudge-left h-4 w-4" aria-hidden="true" />
                 <span>Siswa Sebelumnya</span>
               </button>
               <button
@@ -237,15 +237,15 @@ export function AnswerEntrySection({
                   selectedIndex < rows.length - 1 &&
                   onSelectStudent(rows[selectedIndex + 1].id)
                 }
-                className="inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-[#D4DDD8] bg-[#F8FAF9] px-3 py-2 text-xs font-semibold whitespace-nowrap text-[#14211C] transition-colors hover:bg-[#EAF2EE] disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#E6EEE9]"
+                className="btn-gesture btn-surface-secondary inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <span>Siswa Berikutnya</span>
-                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                <ChevronRight className="btn-nudge-right h-4 w-4" aria-hidden="true" />
               </button>
               <button
                 type="button"
                 onClick={() => onRemoveStudent(activeStudent.id)}
-                className="inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-[#E6C7C4] bg-white px-3 py-2 text-xs font-semibold whitespace-nowrap text-[#B42318] transition-colors hover:bg-[#FEF3F2] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B42318] dark:border-[#5C2B27] dark:bg-[#1B1414] dark:text-[#F97066] dark:hover:bg-[#321B19]"
+                className="btn-gesture btn-surface-danger inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold whitespace-nowrap"
               >
                 <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 <span>Hapus siswa</span>
@@ -383,10 +383,10 @@ export function AnswerEntrySection({
                       key={opt}
                       type="button"
                       onClick={() => onSetAnswer(opt)}
-                      className={`font-mono-tabular min-h-[56px] cursor-pointer rounded-lg border text-xl font-bold transition-transform duration-100 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] ${
+                      className={`btn-gesture font-mono-tabular min-h-[56px] cursor-pointer rounded-xl text-xl font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] ${
                         isPicked
-                          ? 'border-[#124A36] bg-[#124A36] text-white ring-2 ring-[#1B6B4F]/40 dark:border-[#6AD8AC] dark:bg-[#6AD8AC] dark:text-[#0B1712]'
-                          : 'border-[#1B6B4F] bg-[#1B6B4F] text-white hover:bg-[#15563F] dark:border-[#4AC294] dark:bg-[#4AC294] dark:text-[#0B1712] dark:hover:bg-[#3BB084]'
+                          ? 'btn-surface-primary ring-2 ring-[#D99B4E]/60'
+                          : 'btn-surface-primary'
                       }`}
                     >
                       {opt}
@@ -398,7 +398,7 @@ export function AnswerEntrySection({
               <button
                 type="button"
                 onClick={() => onSetAnswer('')}
-                className="inline-flex min-h-[42px] w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#D4DDD8] bg-[#F8FAF9] px-4 text-sm font-semibold text-[#2B3B35] transition-colors hover:bg-[#E7EEEA] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F] dark:border-[#28362F] dark:bg-[#1C2722] dark:text-[#C5D3CC] dark:hover:bg-[#23322B]"
+                className="btn-gesture btn-surface-secondary inline-flex min-h-[42px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F]"
               >
                 <Eraser className="h-4 w-4" aria-hidden="true" />
                 <span>Kosongkan nomor {safeQuestionIdx + 1}</span>
@@ -446,7 +446,7 @@ export function AnswerEntrySection({
                         type="button"
                         onClick={handleApplyBulk}
                         disabled={!bulkInput.trim()}
-                        className="min-h-[38px] shrink-0 cursor-pointer rounded-lg border border-[#1B6B4F] bg-[#1B6B4F] px-3.5 text-xs font-semibold whitespace-nowrap text-white transition-colors hover:bg-[#15563F] disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#4AC294] dark:bg-[#4AC294] dark:text-[#0B1712]"
+                        className="btn-gesture btn-surface-primary min-h-[38px] shrink-0 cursor-pointer rounded-xl px-3.5 text-xs font-semibold whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Terapkan ke Siswa Ini
                       </button>
