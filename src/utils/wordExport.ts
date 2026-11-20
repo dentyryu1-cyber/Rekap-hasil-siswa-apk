@@ -7,6 +7,7 @@ import {
   HeadingLevel,
   ImageRun,
   Packer,
+  PageBreak,
   PageNumber,
   Paragraph,
   ShadingType,
@@ -18,6 +19,12 @@ import {
   WidthType,
 } from 'docx';
 import type { AnswerLetter, StudentRow, SurveySubMode, UraianStudentRow } from '../types/sheet';
+import {
+  computeAnatesV4AbcReport,
+  computeAnatesV4UraianReport,
+  type FullAnatesV4AbcReport,
+  type FullAnatesV4UraianReport,
+} from './anatesV4Analysis';
 import { normalizeAnswers } from './answerParser';
 import { makeSlug, triggerFileDownload } from './excelExport';
 import {
@@ -32,6 +39,8 @@ import {
   normalizeScores,
   type FullUraianAnalysisReport,
 } from './uraianAnalysis';
+
+export type WordReportVariant = 'rekapinjx' | 'anatesv4' | 'both';
 
 export interface WordChartPoint {
   nama: string;
@@ -50,6 +59,9 @@ interface RenderedPng {
 const BRAND_PRIMARY = '1B6B4F';
 const BRAND_PRIMARY_LIGHT = 'EAF4EF';
 const BRAND_SURFACE_ALT = 'F7FAF8';
+const ANATES_PRIMARY = '8A511D';
+const ANATES_PRIMARY_LIGHT = 'FDF3E7';
+const ANATES_SURFACE_ALT = 'FBF8F4';
 const BORDER_HEX = 'CFDAD4';
 const TEXT_DARK = '14211C';
 const TEXT_MUTED = '52635C';
@@ -101,6 +113,7 @@ function drawRoundedRect(
 
 function renderClassAverageChartPng(
   students: WordChartPoint[],
+  accentHex = '#1B6B4F',
 ): RenderedPng {
   const cssW = 580;
   const cssH = 270;
@@ -114,7 +127,6 @@ function renderClassAverageChartPng(
   }
   ctx.scale(dpr, dpr);
 
-  // Light paper card background
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, cssW, cssH);
   ctx.strokeStyle = '#D4DDD8';
@@ -145,7 +157,6 @@ function renderClassAverageChartPng(
       ? Math.round((totalPercent / students.length) * 10) / 10
       : 0;
 
-  // Title & subtitle
   ctx.fillStyle = '#14211C';
   ctx.font = '700 13px "Segoe UI", Arial, sans-serif';
   ctx.fillText('Rata-rata Nilai per Kelas (%)', 18, 26);
@@ -163,7 +174,6 @@ function renderClassAverageChartPng(
   const plotW = cssW - padLeft - padRight;
   const plotH = cssH - padTop - padBottom;
 
-  // Gridlines 0..100
   const ticks = [0, 25, 50, 75, 100];
   ctx.font = '500 10px "Segoe UI", Arial, sans-serif';
   for (const tick of ticks) {
@@ -181,7 +191,6 @@ function renderClassAverageChartPng(
     ctx.fillText(label, padLeft - lw - 8, y + 3.5);
   }
 
-  // Bars
   const slotW = groups.length > 0 ? plotW / groups.length : plotW;
   const barW = Math.min(54, Math.max(18, slotW * 0.56));
   groups.forEach((g, idx) => {
@@ -190,18 +199,16 @@ function renderClassAverageChartPng(
     const barH = Math.max(2, (g.avg / 100) * plotH);
     const y = padTop + plotH - barH;
 
-    ctx.fillStyle = '#1B6B4F';
+    ctx.fillStyle = accentHex;
     drawRoundedRect(ctx, x, y, barW, barH, 5);
     ctx.fill();
 
-    // Value label
     ctx.fillStyle = '#14211C';
     ctx.font = '700 10px "Segoe UI", Arial, sans-serif';
     const valStr = `${g.avg}%`;
     const vw = ctx.measureText(valStr).width;
     ctx.fillText(valStr, cx - vw / 2, Math.max(padTop - 4, y - 5));
 
-    // X-axis label
     ctx.fillStyle = '#14211C';
     ctx.font = '600 10px "Segoe UI", Arial, sans-serif';
     const nameStr =
@@ -216,7 +223,6 @@ function renderClassAverageChartPng(
     ctx.fillText(countStr, cx - cw / 2, padTop + plotH + 30);
   });
 
-  // Overall average reference dashed line
   const refY = padTop + plotH - (overallAvg / 100) * plotH;
   ctx.save();
   ctx.strokeStyle = '#9C5718';
@@ -377,7 +383,7 @@ function renderItemQualityChartPng(counts: {
 
   ctx.fillStyle = '#14211C';
   ctx.font = '700 13px "Segoe UI", Arial, sans-serif';
-  ctx.fillText('Ringkasan Keputusan Kualitas Butir Soal', 18, 25);
+  ctx.fillText('Ringkasan Keputusan Kualitas Butir (Versi rekapinJx)', 18, 25);
 
   const labelX = 18;
   const barX = 100;
@@ -391,7 +397,6 @@ function renderItemQualityChartPng(counts: {
     ctx.font = '600 11px "Segoe UI", Arial, sans-serif';
     ctx.fillText(b.label, labelX, y + 14);
 
-    // Track background
     ctx.fillStyle = '#EFF3F1';
     ctx.fillRect(barX, y, maxBarW, 20);
 
@@ -414,11 +419,91 @@ function renderItemQualityChartPng(counts: {
   };
 }
 
+function renderAnatesDifficultyChartPng(counts: {
+  veryEasy: number;
+  easy: number;
+  medium: number;
+  hard: number;
+  veryHard: number;
+}): RenderedPng {
+  const cssW = 580;
+  const cssH = 225;
+  const dpr = 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return { data: new Uint8Array(), width: cssW, height: cssH };
+  }
+  ctx.scale(dpr, dpr);
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.strokeStyle = '#E5D8C8';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, cssW - 1, cssH - 1);
+
+  const total = Math.max(
+    1,
+    counts.veryEasy +
+      counts.easy +
+      counts.medium +
+      counts.hard +
+      counts.veryHard,
+  );
+  const bars = [
+    { label: 'Sangat Mudah (>85%)', count: counts.veryEasy, color: '#B0851A' },
+    { label: 'Mudah (71–85%)', count: counts.easy, color: '#2B8C68' },
+    { label: 'Sedang (31–70%)', count: counts.medium, color: '#1B6B4F' },
+    { label: 'Sukar (16–30%)', count: counts.hard, color: '#C47425' },
+    { label: 'Sangat Sukar (≤15%)', count: counts.veryHard, color: '#B42318' },
+  ];
+
+  ctx.fillStyle = '#14211C';
+  ctx.font = '700 13px "Segoe UI", Arial, sans-serif';
+  ctx.fillText('Sebaran 5 Kategori Tingkat Kesukaran (Metode Anates V4)', 18, 25);
+
+  const labelX = 18;
+  const barX = 165;
+  const maxBarW = cssW - barX - 95;
+  const startY = 46;
+  const rowGap = 33;
+
+  bars.forEach((b, idx) => {
+    const y = startY + idx * rowGap;
+    ctx.fillStyle = '#14211C';
+    ctx.font = '600 10.5px "Segoe UI", Arial, sans-serif';
+    ctx.fillText(b.label, labelX, y + 14);
+
+    ctx.fillStyle = '#F7F3EE';
+    ctx.fillRect(barX, y, maxBarW, 18);
+
+    const w = (b.count / total) * maxBarW;
+    if (w > 0) {
+      ctx.fillStyle = b.color;
+      ctx.fillRect(barX, y, Math.max(4, w), 18);
+    }
+
+    const pct = Math.round((b.count / total) * 1000) / 10;
+    ctx.fillStyle = '#14211C';
+    ctx.font = '700 10.5px "Segoe UI", Arial, sans-serif';
+    ctx.fillText(`${b.count} butir (${pct}%)`, barX + maxBarW + 10, y + 13);
+  });
+
+  return {
+    data: dataUrlToUint8Array(canvas.toDataURL('image/png')),
+    width: 500,
+    height: Math.round((cssH / cssW) * 500),
+  };
+}
+
 function makeCell(
   text: string | number,
   options?: {
     bold?: boolean;
     header?: boolean;
+    headerFill?: string;
     align?: (typeof AlignmentType)[keyof typeof AlignmentType];
     shading?: string;
     color?: string;
@@ -426,10 +511,11 @@ function makeCell(
   },
 ): TableCell {
   const isHeader = Boolean(options?.header);
+  const headerFill = options?.headerFill ?? BRAND_PRIMARY;
   return new TableCell({
     verticalAlign: VerticalAlign.CENTER,
     shading: isHeader
-      ? { type: ShadingType.CLEAR, fill: BRAND_PRIMARY, color: 'auto' }
+      ? { type: ShadingType.CLEAR, fill: headerFill, color: 'auto' }
       : options?.shading
         ? { type: ShadingType.CLEAR, fill: options.shading, color: 'auto' }
         : undefined,
@@ -450,7 +536,7 @@ function makeCell(
           new TextRun({
             text: String(text),
             bold: isHeader || Boolean(options?.bold),
-            size: isHeader ? 18 : 18,
+            size: 18,
             color: isHeader ? 'FFFFFF' : options?.color ?? TEXT_DARK,
             font: 'Calibri',
           }),
@@ -475,13 +561,18 @@ function buildStyledTable(
       shading?: string;
     }>
   >,
+  theme?: { headerFill?: string; altRowFill?: string },
 ): Table {
+  const headerFill = theme?.headerFill ?? BRAND_PRIMARY;
+  const altRowFill = theme?.altRowFill ?? BRAND_SURFACE_ALT;
+
   const headerRow = new TableRow({
     tableHeader: true,
     cantSplit: true,
     children: headers.map((h) =>
       makeCell(h.label, {
         header: true,
+        headerFill,
         align: h.align ?? AlignmentType.LEFT,
         widthPct: h.widthPct,
       }),
@@ -489,7 +580,7 @@ function buildStyledTable(
   });
 
   const bodyRows = rows.map((row, rowIdx) => {
-    const defaultShade = rowIdx % 2 === 1 ? BRAND_SURFACE_ALT : undefined;
+    const defaultShade = rowIdx % 2 === 1 ? altRowFill : undefined;
     return new TableRow({
       cantSplit: true,
       children: row.map((cell, colIdx) =>
@@ -512,32 +603,77 @@ function buildStyledTable(
 }
 
 function decisionColor(decision: string): { color: string; shading?: string } {
-  if (decision === 'Dipakai' || decision === 'Valid') {
+  if (
+    decision === 'Dipakai' ||
+    decision === 'Valid' ||
+    decision === 'Sangat Signifikan' ||
+    decision === 'Signifikan'
+  ) {
     return { color: BRAND_PRIMARY, shading: BRAND_PRIMARY_LIGHT };
   }
   if (decision === 'Revisi') {
     return { color: '8A511D', shading: 'FDF3E7' };
   }
-  if (decision === 'Dibuang' || decision === 'Tidak Valid') {
+  if (
+    decision === 'Dibuang' ||
+    decision === 'Tidak Valid' ||
+    decision === 'Tidak Signifikan'
+  ) {
     return { color: 'B42318', shading: 'FDECEC' };
   }
   return { color: TEXT_DARK };
 }
 
-function makeSectionHeading(text: string): Paragraph {
+function makeSectionHeading(
+  text: string,
+  colorHex = BRAND_PRIMARY,
+): Paragraph {
   return new Paragraph({
     heading: HeadingLevel.HEADING_2,
-    spacing: { before: 280, after: 120 },
+    spacing: { before: 260, after: 120 },
     children: [
       new TextRun({
         text,
         bold: true,
-        size: 26,
-        color: BRAND_PRIMARY,
+        size: 25,
+        color: colorHex,
         font: 'Calibri',
       }),
     ],
   });
+}
+
+function makeChapterBanner(
+  chapterTitle: string,
+  subtitle: string,
+  accentHex: string,
+): Paragraph[] {
+  return [
+    new Paragraph({
+      spacing: { before: 240, after: 40 },
+      children: [
+        new TextRun({
+          text: chapterTitle,
+          bold: true,
+          size: 30,
+          color: accentHex,
+          font: 'Calibri',
+        }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { before: 0, after: 140 },
+      children: [
+        new TextRun({
+          text: subtitle,
+          italics: true,
+          size: 19,
+          color: TEXT_MUTED,
+          font: 'Calibri',
+        }),
+      ],
+    }),
+  ];
 }
 
 function makeChartParagraph(img: RenderedPng, caption: string): Paragraph[] {
@@ -572,7 +708,7 @@ function makeChartParagraph(img: RenderedPng, caption: string): Paragraph[] {
   ];
 }
 
-function makeDocHeaderAndFooter(titleText: string) {
+function makeDocHeaderAndFooter(titleText: string, variantLabel: string) {
   return {
     headers: {
       default: new Header({
@@ -581,7 +717,7 @@ function makeDocHeaderAndFooter(titleText: string) {
             alignment: AlignmentType.RIGHT,
             children: [
               new TextRun({
-                text: `rekapinJx · ${titleText}`,
+                text: `${variantLabel} · ${titleText}`,
                 size: 16,
                 color: TEXT_MUTED,
                 font: 'Calibri',
@@ -598,7 +734,7 @@ function makeDocHeaderAndFooter(titleText: string) {
             alignment: AlignmentType.CENTER,
             children: [
               new TextRun({
-                text: 'Laporan Hasil Pengolahan Data rekapinJx · Halaman ',
+                text: `Laporan Pengolahan Data (${variantLabel}) · Halaman `,
                 size: 16,
                 color: TEXT_MUTED,
                 font: 'Calibri',
@@ -629,68 +765,30 @@ function makeDocHeaderAndFooter(titleText: string) {
   };
 }
 
-export async function exportAbcWordReport(params: {
-  examTitle: string;
-  rows: StudentRow[];
+function buildAbcRekapinjxBlocks(params: {
+  report: FullItemAnalysisReport;
   questionCount: number;
-  answerKey: AnswerLetter[];
-}): Promise<string> {
-  const { examTitle, rows, questionCount, answerKey } = params;
-  const optionMode = detectOptionMode(rows, questionCount, answerKey);
-  const report: FullItemAnalysisReport = computeFullItemAnalysis(
-    rows,
+  optionMode: 4 | 5;
+  overallAvgPct: number;
+  classChart: RenderedPng;
+  distChart: RenderedPng;
+  qualityChart: RenderedPng;
+  sectionPrefix: string;
+}): Array<Paragraph | Table> {
+  const {
+    report,
     questionCount,
-    answerKey,
     optionMode,
-  );
-  if (!report.hasSufficientData) {
-    throw new Error(report.reasonIfInsufficient);
-  }
-
-  const normKey = normalizeAnswers(answerKey, questionCount);
-  const keyedIndices: number[] = [];
-  for (let i = 0; i < questionCount; i++) {
-    if (normKey[i] !== '') keyedIndices.push(i);
-  }
-  const maxScore = Math.max(1, keyedIndices.length);
-  const chartStudents: WordChartPoint[] = rows.map((row, idx) => {
-    const ans = normalizeAnswers(row.jawaban, questionCount);
-    let correct = 0;
-    for (const qIdx of keyedIndices) {
-      if (ans[qIdx] === normKey[qIdx]) correct++;
-    }
-    return {
-      nama: row.nama || `Siswa ${idx + 1}`,
-      kelas: row.kelas || '',
-      rawScore: correct,
-      maxScore,
-      percentScore: Math.round((correct / maxScore) * 1000) / 10,
-    };
-  });
-
-  const classChart = renderClassAverageChartPng(chartStudents);
-  const distChart = renderScoreDistributionChartPng(chartStudents);
-  const qualityChart = renderItemQualityChartPng(report.summaryCounts);
-
-  const safeTitle = examTitle.trim() || 'Penilaian Pilihan Ganda (ABC)';
-  const dateLabel = new Date().toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-
-  const overallAvgPct =
-    chartStudents.length > 0
-      ? Math.round(
-          (chartStudents.reduce((acc, s) => acc + s.percentScore, 0) /
-            chartStudents.length) *
-            10,
-        ) / 10
-      : 0;
+    overallAvgPct,
+    classChart,
+    distChart,
+    qualityChart,
+    sectionPrefix,
+  } = params;
 
   const summaryTable = buildStyledTable(
     [
-      { label: 'Parameter Pengolahan Data', widthPct: 52 },
+      { label: 'Parameter Pengolahan Data (Versi rekapinJx)', widthPct: 52 },
       { label: 'Hasil Nilai', align: AlignmentType.RIGHT, widthPct: 24 },
       { label: 'Keterangan / Kategori', widthPct: 24 },
     ],
@@ -757,7 +855,7 @@ export async function exportAbcWordReport(params: {
         st.group === 'Unggul'
           ? { color: BRAND_PRIMARY, shading: BRAND_PRIMARY_LIGHT }
           : st.group === 'Asor'
-            ? { color: '8A511D', shading: 'FDF3E7' }
+            ? { color: ANATES_PRIMARY, shading: ANATES_PRIMARY_LIGHT }
             : { color: TEXT_MUTED };
       return [
         { text: st.rank },
@@ -812,7 +910,7 @@ export async function exportAbcWordReport(params: {
         align: AlignmentType.CENTER,
         widthPct: optionMode === 5 ? 12 : 15,
       })),
-      { label: 'Pengecoh Efektif', align: AlignmentType.CENTER, widthPct: 22 },
+      { label: 'Pengecoh Efektif (≥5%)', align: AlignmentType.CENTER, widthPct: 22 },
     ],
     keyedItems.map((it) => [
       { text: it.questionNumber, bold: true },
@@ -827,175 +925,258 @@ export async function exportAbcWordReport(params: {
     ]),
   );
 
-  const doc = new Document({
-    ...makeDocHeaderAndFooter(safeTitle),
-    sections: [
-      {
-        properties: {
-          page: {
-            margin: { top: 1080, right: 1000, bottom: 1080, left: 1000 },
-          },
-        },
-        children: [
-          new Paragraph({
-            spacing: { before: 0, after: 60 },
-            children: [
-              new TextRun({
-                text: 'LAPORAN HASIL PENGOLAHAN DATA & ANALISIS BUTIR',
-                bold: true,
-                size: 32,
-                color: BRAND_PRIMARY,
-                font: 'Calibri',
-              }),
-            ],
-          }),
-          new Paragraph({
-            spacing: { before: 0, after: 40 },
-            children: [
-              new TextRun({
-                text: safeTitle,
-                bold: true,
-                size: 24,
-                color: TEXT_DARK,
-                font: 'Calibri',
-              }),
-            ],
-          }),
-          new Paragraph({
-            spacing: { before: 0, after: 200 },
-            children: [
-              new TextRun({
-                text: `Mode: Pilihan Ganda (ABC) · Tanggal Ekspor: ${dateLabel} · Dihasilkan oleh rekapinJx`,
-                size: 19,
-                color: TEXT_MUTED,
-                font: 'Calibri',
-              }),
-            ],
-          }),
-          makeSectionHeading('1. Ringkasan Statistik & Reliabilitas Tes'),
-          summaryTable,
-          makeSectionHeading('2. Grafik Visualisasi Data Kelas & Kualitas Butir'),
-          ...makeChartParagraph(
-            classChart,
-            'Gambar 1. Perbandingan rata-rata nilai per kelas dibandingkan rata-rata umum.',
-          ),
-          ...makeChartParagraph(
-            distChart,
-            'Gambar 2. Distribusi perolehan nilai siswa pada rentang 0–100%.',
-          ),
-          ...makeChartParagraph(
-            qualityChart,
-            'Gambar 3. Ringkasan keputusan kelayakan butir soal (Dipakai, Revisi, Dibuang).',
-          ),
-          makeSectionHeading(
-            '3. Peringkat Nilai Siswa & Kelompok Unggul–Asor (27%)',
-          ),
-          studentTable,
-          makeSectionHeading('4. Rekap Analisis Butir Soal Lengkap'),
-          itemTable,
-          makeSectionHeading('5. Sebaran Jawaban & Kualitas Pengecoh per Soal'),
-          distractorTable,
-        ],
-      },
-    ],
-  });
-
-  const blob = await Packer.toBlob(doc);
-  const dateStr = new Date().toISOString().slice(0, 10);
-  const filename = `laporan-analisis-abc-${makeSlug(examTitle)}-${dateStr}.docx`;
-  triggerFileDownload(blob, filename);
-  return filename;
+  return [
+    makeSectionHeading(`${sectionPrefix}1. Ringkasan Statistik & Reliabilitas KR-20 (rekapinJx)`),
+    summaryTable,
+    makeSectionHeading(`${sectionPrefix}2. Grafik Visualisasi Kelas & Keputusan Butir`),
+    ...makeChartParagraph(
+      classChart,
+      'Perbandingan rata-rata nilai per kelas dibandingkan rata-rata umum.',
+    ),
+    ...makeChartParagraph(
+      distChart,
+      'Distribusi perolehan nilai siswa pada rentang 0–100%.',
+    ),
+    ...makeChartParagraph(
+      qualityChart,
+      'Ringkasan keputusan kelayakan butir soal versi rekapinJx (Dipakai, Revisi, Dibuang).',
+    ),
+    makeSectionHeading(`${sectionPrefix}3. Peringkat Nilai Siswa & Kelompok Unggul–Asor (27%)`),
+    studentTable,
+    makeSectionHeading(`${sectionPrefix}4. Rekap Analisis Butir Soal Lengkap (rekapinJx)`),
+    itemTable,
+    makeSectionHeading(`${sectionPrefix}5. Sebaran Jawaban & Kualitas Pengecoh (≥5%)`),
+    distractorTable,
+  ];
 }
 
-export async function exportUraianWordReport(params: {
-  examTitle: string;
-  rows: UraianStudentRow[];
-  itemCount: number;
-  subMode: SurveySubMode;
-  scaleMin: number;
-  defaultMaxScore: number;
-  itemMaxScores: number[];
-}): Promise<string> {
+function buildAbcAnatesBlocks(params: {
+  anates: FullAnatesV4AbcReport;
+  questionCount: number;
+  optionMode: 4 | 5;
+  overallAvgPct: number;
+  classChart?: RenderedPng;
+  distChart?: RenderedPng;
+  anatesDiffChart: RenderedPng;
+  sectionPrefix: string;
+}): Array<Paragraph | Table> {
   const {
-    examTitle,
-    rows,
-    itemCount,
-    subMode,
-    scaleMin,
-    defaultMaxScore,
-    itemMaxScores,
+    anates,
+    questionCount,
+    optionMode,
+    overallAvgPct,
+    classChart,
+    distChart,
+    anatesDiffChart,
+    sectionPrefix,
   } = params;
 
-  const normMax = normalizeMaxScores(
-    itemMaxScores,
-    itemCount,
-    defaultMaxScore,
-    scaleMin,
+  const anatesTheme = {
+    headerFill: ANATES_PRIMARY,
+    altRowFill: ANATES_SURFACE_ALT,
+  };
+
+  const relTable = buildStyledTable(
+    [
+      { label: 'Parameter Pengujian (Metode Anates V4)', widthPct: 52 },
+      { label: 'Hasil Nilai', align: AlignmentType.RIGHT, widthPct: 24 },
+      { label: 'Keterangan / Kategori', widthPct: 24 },
+    ],
+    [
+      [
+        { text: 'Jumlah Subjek (N)', bold: true },
+        { text: anates.reliability.studentCount },
+        { text: `Unggul/Asor: ${anates.groupSize} siswa/kel.` },
+      ],
+      [
+        { text: 'Jumlah Butir Berkunci (k)', bold: true },
+        { text: `${anates.reliability.itemCount} dari ${questionCount}` },
+        { text: `${optionMode} pilihan (A–${optionMode === 5 ? 'E' : 'D'})` },
+      ],
+      [
+        { text: 'Rata-rata & Simpangan Baku', bold: true },
+        { text: `${anates.reliability.meanScore} (${overallAvgPct}%)` },
+        { text: `Simpangan baku: ${anates.reliability.stdDev}` },
+      ],
+      [
+        { text: 'Korelasi XY (Belah Dua Ganjil–Genap)', bold: true },
+        {
+          text:
+            anates.reliability.splitHalfR !== null
+              ? anates.reliability.splitHalfR.toFixed(3)
+              : '—',
+        },
+        { text: 'Ganjil vs Genap (nomor butir)' },
+      ],
+      [
+        { text: 'Reliabilitas Tes (Spearman-Brown r11)', bold: true },
+        {
+          text:
+            anates.reliability.spearmanBrownR !== null
+              ? anates.reliability.spearmanBrownR.toFixed(3)
+              : '—',
+          bold: true,
+        },
+        { text: anates.reliability.category, bold: true, color: ANATES_PRIMARY },
+      ],
+      [
+        { text: 'Batas r Tabel (α = 5% dan α = 1%)', bold: true },
+        {
+          text: `${anates.reliability.rTable5?.toFixed(3) ?? '—'} / ${anates.reliability.rTable1?.toFixed(3) ?? '—'}`,
+        },
+        {
+          text: `${anates.summaryCounts.significant} signifikan · ${anates.summaryCounts.notSignificant} tidak`,
+        },
+      ],
+    ],
+    anatesTheme,
   );
-  const report: FullUraianAnalysisReport = computeFullUraianAnalysis(
-    rows,
-    itemCount,
-    subMode,
-    scaleMin,
-    normMax,
+
+  const keyed = anates.items.filter((it) => it.hasKey);
+  const rekapTable = buildStyledTable(
+    [
+      { label: 'No', align: AlignmentType.CENTER, widthPct: 6 },
+      { label: 'Kunci', align: AlignmentType.CENTER, widthPct: 7 },
+      { label: 'Unggul', align: AlignmentType.RIGHT, widthPct: 8 },
+      { label: 'Asor', align: AlignmentType.RIGHT, widthPct: 7 },
+      { label: 'DP (%)', align: AlignmentType.RIGHT, widthPct: 9 },
+      { label: 'TK (%)', align: AlignmentType.RIGHT, widthPct: 9 },
+      { label: 'Tafsiran TK', align: AlignmentType.CENTER, widthPct: 13 },
+      { label: 'r Hitung', align: AlignmentType.RIGHT, widthPct: 9 },
+      { label: 'Signifikansi', align: AlignmentType.CENTER, widthPct: 16 },
+      { label: 'Kode Pengecoh', align: AlignmentType.LEFT, widthPct: 16 },
+    ],
+    keyed.map((it) => {
+      const sigStyle = decisionColor(it.significance);
+      return [
+        { text: it.questionNumber, bold: true },
+        { text: it.key, bold: true },
+        { text: it.upperCorrect },
+        { text: it.lowerCorrect },
+        { text: `${it.discriminationPercent.toFixed(1)}%` },
+        { text: `${it.difficultyPercent.toFixed(1)}%` },
+        { text: it.difficultyCategory },
+        { text: it.correlationR !== null ? it.correlationR.toFixed(3) : '—' },
+        { text: it.significance, bold: true, ...sigStyle },
+        { text: it.distractorSummary },
+      ];
+    }),
+    anatesTheme,
   );
-  if (!report.hasSufficientData) {
-    throw new Error(report.reasonIfInsufficient);
+
+  const optionLetters = optionMode === 5 ? ['A', 'B', 'C', 'D', 'E'] : ['A', 'B', 'C', 'D'];
+  const distractorTable = buildStyledTable(
+    [
+      { label: 'No', align: AlignmentType.CENTER, widthPct: 7 },
+      { label: 'Kunci', align: AlignmentType.CENTER, widthPct: 8 },
+      { label: 'Ideal', align: AlignmentType.RIGHT, widthPct: 9 },
+      ...optionLetters.map((opt) => ({
+        label: `Opsi ${opt}`,
+        align: AlignmentType.CENTER,
+        widthPct: optionMode === 5 ? 15 : 19,
+      })),
+    ],
+    keyed.map((it) => [
+      { text: it.questionNumber, bold: true },
+      { text: it.key, bold: true, color: ANATES_PRIMARY },
+      { text: it.distractors[0]?.idealCount ?? 0 },
+      ...it.distractors.map((d) => ({
+        text: `${d.count} (${d.code})`,
+        bold: d.isKey,
+        shading: d.isKey ? ANATES_PRIMARY_LIGHT : undefined,
+        color: d.isKey ? ANATES_PRIMARY : TEXT_DARK,
+      })),
+    ]),
+    anatesTheme,
+  );
+
+  const charts: Array<Paragraph | Table> = [];
+  if (classChart && distChart) {
+    charts.push(
+      makeSectionHeading(
+        `${sectionPrefix}2. Grafik Visualisasi Kelas & Kategori TK Anates V4`,
+        ANATES_PRIMARY,
+      ),
+      ...makeChartParagraph(
+        classChart,
+        'Perbandingan rata-rata nilai per kelas dibandingkan rata-rata umum.',
+      ),
+      ...makeChartParagraph(
+        distChart,
+        'Distribusi perolehan nilai siswa pada rentang 0–100%.',
+      ),
+      ...makeChartParagraph(
+        anatesDiffChart,
+        'Sebaran 5 kategori Tingkat Kesukaran versi Anates V4.',
+      ),
+    );
+  } else {
+    charts.push(
+      makeSectionHeading(
+        `${sectionPrefix}2. Grafik Sebaran 5 Kategori Tingkat Kesukaran (Anates V4)`,
+        ANATES_PRIMARY,
+      ),
+      ...makeChartParagraph(
+        anatesDiffChart,
+        'Sebaran 5 kategori Tingkat Kesukaran versi Anates V4.',
+      ),
+    );
   }
 
-  const chartStudents: WordChartPoint[] = rows.map((row, idx) => {
-    const normScores = normalizeScores(
-      row.scores,
-      itemCount,
-      scaleMin,
-      normMax,
-    );
-    const stats = computeUraianStudentStats(normScores, itemCount, normMax);
-    const pct =
-      stats.maxPossible > 0
-        ? Math.round((stats.totalScore / stats.maxPossible) * 1000) / 10
-        : 0;
-    return {
-      nama: row.nama || `Peserta ${idx + 1}`,
-      kelas: row.kelas || '',
-      rawScore: stats.totalScore,
-      maxScore: stats.maxPossible,
-      percentScore: pct,
-    };
-  });
+  return [
+    makeSectionHeading(
+      `${sectionPrefix}1. Reliabilitas Belah Dua Spearman-Brown (Metode Anates V4)`,
+      ANATES_PRIMARY,
+    ),
+    relTable,
+    ...charts,
+    makeSectionHeading(
+      `${sectionPrefix}3. Rekap Analisis Butir Versi Anates V4 (DP %, TK %, Signifikansi)`,
+      ANATES_PRIMARY,
+    ),
+    rekapTable,
+    makeSectionHeading(
+      `${sectionPrefix}4. Kualitas Pengecoh Versi Anates V4 (Kode ***, ++, +, -, --, ---)`,
+      ANATES_PRIMARY,
+    ),
+    distractorTable,
+    new Paragraph({
+      spacing: { before: 80, after: 140 },
+      children: [
+        new TextRun({
+          text: 'Keterangan kode pengecoh Anates V4: *** = Kunci Jawaban · ++ = Sangat Baik · + = Baik · - = Kurang Baik · -- = Buruk · --- = Sangat Buruk (0 pemilih).',
+          italics: true,
+          size: 17,
+          color: TEXT_MUTED,
+          font: 'Calibri',
+        }),
+      ],
+    }),
+  ];
+}
 
-  const classChart = renderClassAverageChartPng(chartStudents);
-  const distChart = renderScoreDistributionChartPng(chartStudents);
-  const qualityChart = renderItemQualityChartPng(report.summaryCounts);
-
-  const modeLabel =
-    subMode === 'angket-4'
-      ? 'Angket Skala Likert 1–4'
-      : subMode === 'angket-5'
-        ? 'Angket Skala Likert 1–5'
-        : subMode === 'custom'
-          ? 'Angket / Esai Skala Kustom'
-          : 'Soal Uraian (Esai)';
-
-  const safeTitle = examTitle.trim() || `Pengolahan Data ${modeLabel}`;
-  const dateLabel = new Date().toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-
-  const overallAvgPct =
-    chartStudents.length > 0
-      ? Math.round(
-          (chartStudents.reduce((acc, s) => acc + s.percentScore, 0) /
-            chartStudents.length) *
-            10,
-        ) / 10
-      : 0;
+function buildUraianRekapinjxBlocks(params: {
+  report: FullUraianAnalysisReport;
+  modeLabel: string;
+  overallAvgPct: number;
+  classChart: RenderedPng;
+  distChart: RenderedPng;
+  qualityChart: RenderedPng;
+  sectionPrefix: string;
+}): Array<Paragraph | Table> {
+  const {
+    report,
+    modeLabel,
+    overallAvgPct,
+    classChart,
+    distChart,
+    qualityChart,
+    sectionPrefix,
+  } = params;
 
   const summaryTable = buildStyledTable(
     [
-      { label: 'Parameter Pengolahan Data', widthPct: 52 },
+      { label: 'Parameter Pengolahan Data (Versi rekapinJx)', widthPct: 52 },
       { label: 'Hasil Nilai', align: AlignmentType.RIGHT, widthPct: 24 },
       { label: 'Keterangan / Kategori', widthPct: 24 },
     ],
@@ -1062,7 +1243,7 @@ export async function exportUraianWordReport(params: {
         st.group === 'Unggul'
           ? { color: BRAND_PRIMARY, shading: BRAND_PRIMARY_LIGHT }
           : st.group === 'Asor'
-            ? { color: '8A511D', shading: 'FDF3E7' }
+            ? { color: ANATES_PRIMARY, shading: ANATES_PRIMARY_LIGHT }
             : { color: TEXT_MUTED };
       return [
         { text: st.rank },
@@ -1121,8 +1302,436 @@ export async function exportUraianWordReport(params: {
     ]),
   );
 
+  return [
+    makeSectionHeading(`${sectionPrefix}1. Ringkasan Statistik & Alpha Cronbach (rekapinJx)`),
+    summaryTable,
+    makeSectionHeading(`${sectionPrefix}2. Grafik Visualisasi Data Kelas & Kualitas Butir`),
+    ...makeChartParagraph(
+      classChart,
+      'Perbandingan rata-rata capaian per kelas dibandingkan rata-rata umum.',
+    ),
+    ...makeChartParagraph(
+      distChart,
+      'Distribusi capaian peserta pada rentang 0–100%.',
+    ),
+    ...makeChartParagraph(
+      qualityChart,
+      'Ringkasan keputusan kualitas butir instrumen versi rekapinJx (Dipakai, Revisi, Dibuang).',
+    ),
+    makeSectionHeading(`${sectionPrefix}3. Peringkat Peserta & Kelompok Unggul–Asor (27%)`),
+    studentTable,
+    makeSectionHeading(`${sectionPrefix}4. Rekap Analisis Butir Angket / Uraian (rekapinJx)`),
+    itemTable,
+    makeSectionHeading(`${sectionPrefix}5. Sebaran Skor per Nomor Butir`),
+    distTable,
+  ];
+}
+
+function buildUraianAnatesBlocks(params: {
+  anates: FullAnatesV4UraianReport;
+  modeLabel: string;
+  overallAvgPct: number;
+  classChart?: RenderedPng;
+  distChart?: RenderedPng;
+  anatesDiffChart: RenderedPng;
+  sectionPrefix: string;
+}): Array<Paragraph | Table> {
+  const {
+    anates,
+    modeLabel,
+    overallAvgPct,
+    classChart,
+    distChart,
+    anatesDiffChart,
+    sectionPrefix,
+  } = params;
+
+  const anatesTheme = {
+    headerFill: ANATES_PRIMARY,
+    altRowFill: ANATES_SURFACE_ALT,
+  };
+
+  const relTable = buildStyledTable(
+    [
+      { label: 'Parameter Pengujian (Metode Anates V4)', widthPct: 52 },
+      { label: 'Hasil Nilai', align: AlignmentType.RIGHT, widthPct: 24 },
+      { label: 'Keterangan / Kategori', widthPct: 24 },
+    ],
+    [
+      [
+        { text: 'Jumlah Subjek / Responden (N)', bold: true },
+        { text: anates.reliability.studentCount },
+        { text: `Unggul/Asor: ${anates.groupSize} peserta/kel.` },
+      ],
+      [
+        { text: 'Jumlah Butir (k)', bold: true },
+        { text: anates.reliability.itemCount },
+        { text: modeLabel },
+      ],
+      [
+        { text: 'Rata-rata & Simpangan Baku', bold: true },
+        { text: `${anates.reliability.meanScore} (${overallAvgPct}%)` },
+        { text: `Simpangan baku: ${anates.reliability.stdDev}` },
+      ],
+      [
+        { text: 'Korelasi XY (Belah Dua Ganjil–Genap)', bold: true },
+        {
+          text:
+            anates.reliability.splitHalfR !== null
+              ? anates.reliability.splitHalfR.toFixed(3)
+              : '—',
+        },
+        { text: 'Ganjil vs Genap (nomor butir)' },
+      ],
+      [
+        { text: 'Reliabilitas Tes (Spearman-Brown r11)', bold: true },
+        {
+          text:
+            anates.reliability.spearmanBrownR !== null
+              ? anates.reliability.spearmanBrownR.toFixed(3)
+              : '—',
+          bold: true,
+        },
+        { text: anates.reliability.category, bold: true, color: ANATES_PRIMARY },
+      ],
+      [
+        { text: 'Batas r Tabel (α = 5% dan α = 1%)', bold: true },
+        {
+          text: `${anates.reliability.rTable5?.toFixed(3) ?? '—'} / ${anates.reliability.rTable1?.toFixed(3) ?? '—'}`,
+        },
+        {
+          text: `${anates.summaryCounts.significant} signifikan · ${anates.summaryCounts.notSignificant} tidak`,
+        },
+      ],
+    ],
+    anatesTheme,
+  );
+
+  const rekapTable = buildStyledTable(
+    [
+      { label: 'No', align: AlignmentType.CENTER, widthPct: 6 },
+      { label: 'Maks', align: AlignmentType.RIGHT, widthPct: 8 },
+      { label: 'Mean', align: AlignmentType.RIGHT, widthPct: 9 },
+      { label: 'Unggul', align: AlignmentType.RIGHT, widthPct: 9 },
+      { label: 'Asor', align: AlignmentType.RIGHT, widthPct: 9 },
+      { label: 'DP (%)', align: AlignmentType.RIGHT, widthPct: 10 },
+      { label: 'TK (%)', align: AlignmentType.RIGHT, widthPct: 10 },
+      { label: 'Tafsiran TK', align: AlignmentType.CENTER, widthPct: 14 },
+      { label: 'r Hitung', align: AlignmentType.RIGHT, widthPct: 9 },
+      { label: 'Signifikansi', align: AlignmentType.CENTER, widthPct: 16 },
+    ],
+    anates.items.map((it) => {
+      const sigStyle = decisionColor(it.significance);
+      return [
+        { text: it.itemNumber, bold: true },
+        { text: it.maxScore },
+        { text: it.meanScore.toFixed(2) },
+        { text: it.upperMean.toFixed(2) },
+        { text: it.lowerMean.toFixed(2) },
+        { text: `${it.discriminationPercent.toFixed(1)}%` },
+        { text: `${it.difficultyPercent.toFixed(1)}%` },
+        { text: it.difficultyCategory },
+        { text: it.correlationR !== null ? it.correlationR.toFixed(3) : '—' },
+        { text: it.significance, bold: true, ...sigStyle },
+      ];
+    }),
+    anatesTheme,
+  );
+
+  const charts: Array<Paragraph | Table> = [];
+  if (classChart && distChart) {
+    charts.push(
+      makeSectionHeading(
+        `${sectionPrefix}2. Grafik Visualisasi Kelas & Kategori TK Anates V4`,
+        ANATES_PRIMARY,
+      ),
+      ...makeChartParagraph(
+        classChart,
+        'Perbandingan rata-rata capaian per kelas dibandingkan rata-rata umum.',
+      ),
+      ...makeChartParagraph(
+        distChart,
+        'Distribusi capaian peserta pada rentang 0–100%.',
+      ),
+      ...makeChartParagraph(
+        anatesDiffChart,
+        'Sebaran 5 kategori Tingkat Kesukaran versi Anates V4.',
+      ),
+    );
+  } else {
+    charts.push(
+      makeSectionHeading(
+        `${sectionPrefix}2. Grafik Sebaran 5 Kategori Tingkat Kesukaran (Anates V4)`,
+        ANATES_PRIMARY,
+      ),
+      ...makeChartParagraph(
+        anatesDiffChart,
+        'Sebaran 5 kategori Tingkat Kesukaran versi Anates V4.',
+      ),
+    );
+  }
+
+  return [
+    makeSectionHeading(
+      `${sectionPrefix}1. Reliabilitas Belah Dua Spearman-Brown (Metode Anates V4)`,
+      ANATES_PRIMARY,
+    ),
+    relTable,
+    ...charts,
+    makeSectionHeading(
+      `${sectionPrefix}3. Rekap Analisis Butir Angket / Uraian Versi Anates V4`,
+      ANATES_PRIMARY,
+    ),
+    rekapTable,
+  ];
+}
+
+export async function exportAbcWordReport(params: {
+  examTitle: string;
+  rows: StudentRow[];
+  questionCount: number;
+  answerKey: AnswerLetter[];
+  reportVariant?: WordReportVariant;
+}): Promise<string> {
+  const {
+    examTitle,
+    rows,
+    questionCount,
+    answerKey,
+    reportVariant = 'rekapinjx',
+  } = params;
+  const optionMode = detectOptionMode(rows, questionCount, answerKey);
+  const report: FullItemAnalysisReport = computeFullItemAnalysis(
+    rows,
+    questionCount,
+    answerKey,
+    optionMode,
+  );
+  if (!report.hasSufficientData) {
+    throw new Error(report.reasonIfInsufficient);
+  }
+  const anatesReport = computeAnatesV4AbcReport(
+    rows,
+    questionCount,
+    answerKey,
+    optionMode,
+  );
+
+  const normKey = normalizeAnswers(answerKey, questionCount);
+  const keyedIndices: number[] = [];
+  for (let i = 0; i < questionCount; i++) {
+    if (normKey[i] !== '') keyedIndices.push(i);
+  }
+  const maxScore = Math.max(1, keyedIndices.length);
+  const chartStudents: WordChartPoint[] = rows.map((row, idx) => {
+    const ans = normalizeAnswers(row.jawaban, questionCount);
+    let correct = 0;
+    for (const qIdx of keyedIndices) {
+      if (ans[qIdx] === normKey[qIdx]) correct++;
+    }
+    return {
+      nama: row.nama || `Siswa ${idx + 1}`,
+      kelas: row.kelas || '',
+      rawScore: correct,
+      maxScore,
+      percentScore: Math.round((correct / maxScore) * 1000) / 10,
+    };
+  });
+
+  const classChart = renderClassAverageChartPng(
+    chartStudents,
+    reportVariant === 'anatesv4' ? '#8A511D' : '#1B6B4F',
+  );
+  const distChart = renderScoreDistributionChartPng(chartStudents);
+  const qualityChart = renderItemQualityChartPng(report.summaryCounts);
+  const anatesDiffChart = renderAnatesDifficultyChartPng(
+    anatesReport.summaryCounts,
+  );
+
+  const safeTitle = examTitle.trim() || 'Penilaian Pilihan Ganda (ABC)';
+  const dateLabel = new Date().toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  const overallAvgPct =
+    chartStudents.length > 0
+      ? Math.round(
+          (chartStudents.reduce((acc, s) => acc + s.percentScore, 0) /
+            chartStudents.length) *
+            10,
+        ) / 10
+      : 0;
+
+  const variantLabel =
+    reportVariant === 'anatesv4'
+      ? 'Anates V4 (via rekapinJx)'
+      : reportVariant === 'both'
+        ? 'rekapinJx + Anates V4'
+        : 'rekapinJx';
+
+  const headerColor =
+    reportVariant === 'anatesv4' ? ANATES_PRIMARY : BRAND_PRIMARY;
+
+  const docChildren: Array<Paragraph | Table> = [
+    new Paragraph({
+      spacing: { before: 0, after: 60 },
+      children: [
+        new TextRun({
+          text:
+            reportVariant === 'anatesv4'
+              ? 'LAPORAN ANALISIS BUTIR SOAL (METODE ANATES V4)'
+              : reportVariant === 'both'
+                ? 'LAPORAN ANALISIS BUTIR TERPISAH (rekapinJx & ANATES V4)'
+                : 'LAPORAN HASIL PENGOLAHAN DATA & ANALISIS BUTIR',
+          bold: true,
+          size: 32,
+          color: headerColor,
+          font: 'Calibri',
+        }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { before: 0, after: 40 },
+      children: [
+        new TextRun({
+          text: safeTitle,
+          bold: true,
+          size: 24,
+          color: TEXT_DARK,
+          font: 'Calibri',
+        }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { before: 0, after: 200 },
+      children: [
+        new TextRun({
+          text: `Mode: Pilihan Ganda (ABC) · Mesin: ${variantLabel} · Tanggal Ekspor: ${dateLabel}`,
+          size: 19,
+          color: TEXT_MUTED,
+          font: 'Calibri',
+        }),
+      ],
+    }),
+  ];
+
+  if (reportVariant === 'rekapinjx') {
+    docChildren.push(
+      ...buildAbcRekapinjxBlocks({
+        report,
+        questionCount,
+        optionMode,
+        overallAvgPct,
+        classChart,
+        distChart,
+        qualityChart,
+        sectionPrefix: '',
+      }),
+    );
+  } else if (reportVariant === 'anatesv4') {
+    docChildren.push(
+      ...buildAbcAnatesBlocks({
+        anates: anatesReport,
+        questionCount,
+        optionMode,
+        overallAvgPct,
+        classChart,
+        distChart,
+        anatesDiffChart,
+        sectionPrefix: '',
+      }),
+    );
+  } else {
+    const compareTable = buildStyledTable(
+      [
+        { label: 'Aspek Perbandingan', widthPct: 36 },
+        { label: 'Hasil rekapinJx', align: AlignmentType.CENTER, widthPct: 32 },
+        { label: 'Hasil Anates V4', align: AlignmentType.CENTER, widthPct: 32 },
+      ],
+      [
+        [
+          { text: 'Metode Reliabilitas', bold: true },
+          { text: 'KR-20 (Konsistensi Internal)' },
+          { text: 'Belah Dua Ganjil–Genap (Spearman-Brown r11)' },
+        ],
+        [
+          { text: 'Nilai Koefisien Reliabilitas', bold: true },
+          {
+            text: `${report.reliability.kr20 !== null ? report.reliability.kr20.toFixed(3) : '—'} (${report.reliability.category})`,
+            bold: true,
+            color: BRAND_PRIMARY,
+          },
+          {
+            text: `${anatesReport.reliability.spearmanBrownR !== null ? anatesReport.reliability.spearmanBrownR.toFixed(3) : '—'} (${anatesReport.reliability.category})`,
+            bold: true,
+            color: ANATES_PRIMARY,
+          },
+        ],
+        [
+          { text: 'Signifikansi / Validitas Butir', bold: true },
+          {
+            text: `${report.summaryCounts.valid} Valid · ${report.summaryCounts.invalid} Tidak Valid (α = 5%)`,
+          },
+          {
+            text: `${anatesReport.summaryCounts.significant} Signifikan/Sangat Signifikan · ${anatesReport.summaryCounts.notSignificant} Tidak (α = 5% & 1%)`,
+          },
+        ],
+        [
+          { text: 'Kategori Tingkat Kesukaran', bold: true },
+          {
+            text: `3 Tingkat: ${report.summaryCounts.easy} Mudah · ${report.summaryCounts.medium} Sedang · ${report.summaryCounts.hard} Sukar`,
+          },
+          {
+            text: `5 Tingkat: ${anatesReport.summaryCounts.veryEasy} Sgt Mudah · ${anatesReport.summaryCounts.easy} Mudah · ${anatesReport.summaryCounts.medium} Sedang · ${anatesReport.summaryCounts.hard} Sukar · ${anatesReport.summaryCounts.veryHard} Sgt Sukar`,
+          },
+        ],
+        [
+          { text: 'Penilaian Pengecoh', bold: true },
+          { text: 'Ambang minimal ≥ 5% pemilih' },
+          { text: 'Kode ***, ++, +, -, --, --- berbasis nilai ideal (N−B)/(m−1)' },
+        ],
+      ],
+    );
+
+    docChildren.push(
+      makeSectionHeading('Ringkasan Perbedaan Metodologi (rekapinJx vs Anates V4)'),
+      compareTable,
+      ...makeChapterBanner(
+        'BAGIAN A — HASIL OLAH DATA VERSI rekapinJx',
+        'Menggunakan KR-20, 3 kategori kesukaran (P), pengecoh ≥ 5%, dan keputusan akhir butir.',
+        BRAND_PRIMARY,
+      ),
+      ...buildAbcRekapinjxBlocks({
+        report,
+        questionCount,
+        optionMode,
+        overallAvgPct,
+        classChart,
+        distChart,
+        qualityChart,
+        sectionPrefix: 'A.',
+      }),
+      new Paragraph({ children: [new PageBreak()] }),
+      ...makeChapterBanner(
+        'BAGIAN B — HASIL OLAH DATA VERSI ANATES V4',
+        'Menggunakan Belah Dua Ganjil–Genap (Spearman-Brown r11), TK 5 kategori (%), DP (%), uji signifikansi 5%/1%, dan kode pengecoh Anates V4.',
+        ANATES_PRIMARY,
+      ),
+      ...buildAbcAnatesBlocks({
+        anates: anatesReport,
+        questionCount,
+        optionMode,
+        overallAvgPct,
+        anatesDiffChart,
+        sectionPrefix: 'B.',
+      }),
+    );
+  }
+
   const doc = new Document({
-    ...makeDocHeaderAndFooter(safeTitle),
+    ...makeDocHeaderAndFooter(safeTitle, variantLabel),
     sections: [
       {
         properties: {
@@ -1130,73 +1739,299 @@ export async function exportUraianWordReport(params: {
             margin: { top: 1080, right: 1000, bottom: 1080, left: 1000 },
           },
         },
-        children: [
-          new Paragraph({
-            spacing: { before: 0, after: 60 },
-            children: [
-              new TextRun({
-                text: 'LAPORAN HASIL PENGOLAHAN DATA & ANALISIS BUTIR',
-                bold: true,
-                size: 32,
-                color: BRAND_PRIMARY,
-                font: 'Calibri',
-              }),
-            ],
-          }),
-          new Paragraph({
-            spacing: { before: 0, after: 40 },
-            children: [
-              new TextRun({
-                text: safeTitle,
-                bold: true,
-                size: 24,
-                color: TEXT_DARK,
-                font: 'Calibri',
-              }),
-            ],
-          }),
-          new Paragraph({
-            spacing: { before: 0, after: 200 },
-            children: [
-              new TextRun({
-                text: `Mode: ${modeLabel} · Tanggal Ekspor: ${dateLabel} · Dihasilkan oleh rekapinJx`,
-                size: 19,
-                color: TEXT_MUTED,
-                font: 'Calibri',
-              }),
-            ],
-          }),
-          makeSectionHeading('1. Ringkasan Statistik & Reliabilitas Instrumen'),
-          summaryTable,
-          makeSectionHeading('2. Grafik Visualisasi Data Kelas & Kualitas Butir'),
-          ...makeChartParagraph(
-            classChart,
-            'Gambar 1. Perbandingan rata-rata capaian per kelas dibandingkan rata-rata umum.',
-          ),
-          ...makeChartParagraph(
-            distChart,
-            'Gambar 2. Distribusi capaian peserta pada rentang 0–100%.',
-          ),
-          ...makeChartParagraph(
-            qualityChart,
-            'Gambar 3. Ringkasan keputusan kualitas butir instrumen (Dipakai, Revisi, Dibuang).',
-          ),
-          makeSectionHeading(
-            '3. Peringkat Peserta & Kelompok Unggul–Asor (27%)',
-          ),
-          studentTable,
-          makeSectionHeading('4. Rekap Analisis Butir Angket / Uraian Lengkap'),
-          itemTable,
-          makeSectionHeading('5. Sebaran Skor per Nomor Butir'),
-          distTable,
-        ],
+        children: docChildren,
       },
     ],
   });
 
   const blob = await Packer.toBlob(doc);
   const dateStr = new Date().toISOString().slice(0, 10);
-  const filename = `laporan-analisis-uraian-${makeSlug(examTitle)}-${dateStr}.docx`;
+  const filename =
+    reportVariant === 'anatesv4'
+      ? `laporan-anatesv4-abc-${makeSlug(examTitle)}-${dateStr}.docx`
+      : reportVariant === 'both'
+        ? `laporan-lengkap-rekapinjx-anatesv4-abc-${makeSlug(examTitle)}-${dateStr}.docx`
+        : `laporan-analisis-abc-${makeSlug(examTitle)}-${dateStr}.docx`;
+  triggerFileDownload(blob, filename);
+  return filename;
+}
+
+export async function exportUraianWordReport(params: {
+  examTitle: string;
+  rows: UraianStudentRow[];
+  itemCount: number;
+  subMode: SurveySubMode;
+  scaleMin: number;
+  defaultMaxScore: number;
+  itemMaxScores: number[];
+  reportVariant?: WordReportVariant;
+}): Promise<string> {
+  const {
+    examTitle,
+    rows,
+    itemCount,
+    subMode,
+    scaleMin,
+    defaultMaxScore,
+    itemMaxScores,
+    reportVariant = 'rekapinjx',
+  } = params;
+
+  const normMax = normalizeMaxScores(
+    itemMaxScores,
+    itemCount,
+    defaultMaxScore,
+    scaleMin,
+  );
+  const report: FullUraianAnalysisReport = computeFullUraianAnalysis(
+    rows,
+    itemCount,
+    subMode,
+    scaleMin,
+    normMax,
+  );
+  if (!report.hasSufficientData) {
+    throw new Error(report.reasonIfInsufficient);
+  }
+  const anatesReport = computeAnatesV4UraianReport(
+    rows,
+    itemCount,
+    subMode,
+    scaleMin,
+    normMax,
+  );
+
+  const chartStudents: WordChartPoint[] = rows.map((row, idx) => {
+    const normScores = normalizeScores(
+      row.scores,
+      itemCount,
+      scaleMin,
+      normMax,
+    );
+    const stats = computeUraianStudentStats(normScores, itemCount, normMax);
+    const pct =
+      stats.maxPossible > 0
+        ? Math.round((stats.totalScore / stats.maxPossible) * 1000) / 10
+        : 0;
+    return {
+      nama: row.nama || `Peserta ${idx + 1}`,
+      kelas: row.kelas || '',
+      rawScore: stats.totalScore,
+      maxScore: stats.maxPossible,
+      percentScore: pct,
+    };
+  });
+
+  const classChart = renderClassAverageChartPng(
+    chartStudents,
+    reportVariant === 'anatesv4' ? '#8A511D' : '#1B6B4F',
+  );
+  const distChart = renderScoreDistributionChartPng(chartStudents);
+  const qualityChart = renderItemQualityChartPng(report.summaryCounts);
+  const anatesDiffChart = renderAnatesDifficultyChartPng(
+    anatesReport.summaryCounts,
+  );
+
+  const modeLabel =
+    subMode === 'angket-4'
+      ? 'Angket Skala Likert 1–4'
+      : subMode === 'angket-5'
+        ? 'Angket Skala Likert 1–5'
+        : subMode === 'custom'
+          ? 'Angket / Esai Skala Kustom'
+          : 'Soal Uraian (Esai)';
+
+  const safeTitle = examTitle.trim() || `Pengolahan Data ${modeLabel}`;
+  const dateLabel = new Date().toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  const overallAvgPct =
+    chartStudents.length > 0
+      ? Math.round(
+          (chartStudents.reduce((acc, s) => acc + s.percentScore, 0) /
+            chartStudents.length) *
+            10,
+        ) / 10
+      : 0;
+
+  const variantLabel =
+    reportVariant === 'anatesv4'
+      ? 'Anates V4 (via rekapinJx)'
+      : reportVariant === 'both'
+        ? 'rekapinJx + Anates V4'
+        : 'rekapinJx';
+
+  const headerColor =
+    reportVariant === 'anatesv4' ? ANATES_PRIMARY : BRAND_PRIMARY;
+
+  const docChildren: Array<Paragraph | Table> = [
+    new Paragraph({
+      spacing: { before: 0, after: 60 },
+      children: [
+        new TextRun({
+          text:
+            reportVariant === 'anatesv4'
+              ? 'LAPORAN ANALISIS ANGKET / URAIAN (METODE ANATES V4)'
+              : reportVariant === 'both'
+                ? 'LAPORAN ANALISIS TERPISAH (rekapinJx & ANATES V4)'
+                : 'LAPORAN HASIL PENGOLAHAN DATA & ANALISIS BUTIR',
+          bold: true,
+          size: 32,
+          color: headerColor,
+          font: 'Calibri',
+        }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { before: 0, after: 40 },
+      children: [
+        new TextRun({
+          text: safeTitle,
+          bold: true,
+          size: 24,
+          color: TEXT_DARK,
+          font: 'Calibri',
+        }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { before: 0, after: 200 },
+      children: [
+        new TextRun({
+          text: `Mode: ${modeLabel} · Mesin: ${variantLabel} · Tanggal Ekspor: ${dateLabel}`,
+          size: 19,
+          color: TEXT_MUTED,
+          font: 'Calibri',
+        }),
+      ],
+    }),
+  ];
+
+  if (reportVariant === 'rekapinjx') {
+    docChildren.push(
+      ...buildUraianRekapinjxBlocks({
+        report,
+        modeLabel,
+        overallAvgPct,
+        classChart,
+        distChart,
+        qualityChart,
+        sectionPrefix: '',
+      }),
+    );
+  } else if (reportVariant === 'anatesv4') {
+    docChildren.push(
+      ...buildUraianAnatesBlocks({
+        anates: anatesReport,
+        modeLabel,
+        overallAvgPct,
+        classChart,
+        distChart,
+        anatesDiffChart,
+        sectionPrefix: '',
+      }),
+    );
+  } else {
+    const compareTable = buildStyledTable(
+      [
+        { label: 'Aspek Perbandingan', widthPct: 36 },
+        { label: 'Hasil rekapinJx', align: AlignmentType.CENTER, widthPct: 32 },
+        { label: 'Hasil Anates V4', align: AlignmentType.CENTER, widthPct: 32 },
+      ],
+      [
+        [
+          { text: 'Metode Reliabilitas', bold: true },
+          { text: 'Alpha Cronbach (α)' },
+          { text: 'Belah Dua Ganjil–Genap (Spearman-Brown r11)' },
+        ],
+        [
+          { text: 'Nilai Koefisien Reliabilitas', bold: true },
+          {
+            text: `${report.reliability.cronbachAlpha !== null ? report.reliability.cronbachAlpha.toFixed(3) : '—'} (${report.reliability.category})`,
+            bold: true,
+            color: BRAND_PRIMARY,
+          },
+          {
+            text: `${anatesReport.reliability.spearmanBrownR !== null ? anatesReport.reliability.spearmanBrownR.toFixed(3) : '—'} (${anatesReport.reliability.category})`,
+            bold: true,
+            color: ANATES_PRIMARY,
+          },
+        ],
+        [
+          { text: 'Signifikansi / Validitas Butir', bold: true },
+          {
+            text: `${report.summaryCounts.valid} Valid · ${report.summaryCounts.invalid} Tidak Valid (α = 5%)`,
+          },
+          {
+            text: `${anatesReport.summaryCounts.significant} Signifikan/Sangat Signifikan · ${anatesReport.summaryCounts.notSignificant} Tidak (α = 5% & 1%)`,
+          },
+        ],
+        [
+          { text: 'Rumus Tingkat Kesukaran (TK / P)', bold: true },
+          { text: '(Mean − Min) / (Maks − Min)' },
+          { text: '(Mean / Skor Maks) × 100% (5 kategori Anates V4)' },
+        ],
+      ],
+    );
+
+    docChildren.push(
+      makeSectionHeading('Ringkasan Perbedaan Metodologi (rekapinJx vs Anates V4)'),
+      compareTable,
+      ...makeChapterBanner(
+        'BAGIAN A — HASIL OLAH DATA VERSI rekapinJx',
+        'Menggunakan Alpha Cronbach, rentang skala dinormalisasi (Mean − Min)/(Maks − Min), dan keputusan akhir butir.',
+        BRAND_PRIMARY,
+      ),
+      ...buildUraianRekapinjxBlocks({
+        report,
+        modeLabel,
+        overallAvgPct,
+        classChart,
+        distChart,
+        qualityChart,
+        sectionPrefix: 'A.',
+      }),
+      new Paragraph({ children: [new PageBreak()] }),
+      ...makeChapterBanner(
+        'BAGIAN B — HASIL OLAH DATA VERSI ANATES V4',
+        'Menggunakan Belah Dua Ganjil–Genap (Spearman-Brown r11), TK% = (Mean/Skor Maks)×100%, DP% = ((Unggul−Asor)/Skor Maks)×100%, dan signifikansi 5%/1%.',
+        ANATES_PRIMARY,
+      ),
+      ...buildUraianAnatesBlocks({
+        anates: anatesReport,
+        modeLabel,
+        overallAvgPct,
+        anatesDiffChart,
+        sectionPrefix: 'B.',
+      }),
+    );
+  }
+
+  const doc = new Document({
+    ...makeDocHeaderAndFooter(safeTitle, variantLabel),
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: { top: 1080, right: 1000, bottom: 1080, left: 1000 },
+          },
+        },
+        children: docChildren,
+      },
+    ],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const filename =
+    reportVariant === 'anatesv4'
+      ? `laporan-anatesv4-uraian-${makeSlug(examTitle)}-${dateStr}.docx`
+      : reportVariant === 'both'
+        ? `laporan-lengkap-rekapinjx-anatesv4-uraian-${makeSlug(examTitle)}-${dateStr}.docx`
+        : `laporan-analisis-uraian-${makeSlug(examTitle)}-${dateStr}.docx`;
   triggerFileDownload(blob, filename);
   return filename;
 }
