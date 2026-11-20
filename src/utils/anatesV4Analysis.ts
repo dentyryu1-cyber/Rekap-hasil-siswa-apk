@@ -17,6 +17,10 @@ import {
   clampScore,
   normalizeMaxScores,
 } from './uraianAnalysis';
+import {
+  buildDistinguishedUnggulAsorAOA,
+  buildDistinguishedUnggulAsorText,
+} from './unggulAsorFormat';
 
 export type AnalysisEngineMode = 'rekapinjx' | 'anatesv4' | 'compare';
 
@@ -597,6 +601,7 @@ export function computeAnatesV4UraianReport(
   subMode: SurveySubMode,
   scaleMin: number,
   itemMaxScores: number[],
+  defaultMaxScore?: number,
 ): FullAnatesV4UraianReport {
   const N = rows.length;
   const k = itemCount;
@@ -636,10 +641,19 @@ export function computeAnatesV4UraianReport(
     };
   }
 
+  const fallbackMax =
+    defaultMaxScore && defaultMaxScore > scaleMin
+      ? defaultMaxScore
+      : subMode === 'angket-4'
+        ? 4
+        : subMode === 'angket-5'
+          ? 5
+          : 10;
+
   const normalizedMax = normalizeMaxScores(
     itemMaxScores,
     k,
-    subMode === 'angket-4' ? 4 : subMode === 'angket-5' ? 5 : 10,
+    fallbackMax,
     scaleMin,
   );
 
@@ -865,25 +879,25 @@ function buildAnatesAbcAOA(
   switch (section) {
     case 'reliabilitas':
       return {
-        sheetName: 'Reliabilitas AnatesV4',
+        sheetName: 'Konsistensi Tes AnatesV4',
         filePrefix: 'anatesv4-reliabilitas',
         aoa: [
-          ['Parameter Pengujian (Metode Anates V4)', 'Nilai'],
-          ['Jumlah Subjek (N)', report.reliability.studentCount],
-          ['Jumlah Butir Berkunci (k)', report.reliability.itemCount],
+          ['Parameter Pengujian Konsistensi Tes (Anates V4)', 'Nilai'],
+          ['Jumlah Siswa (N)', report.reliability.studentCount],
+          ['Jumlah Soal Berkunci (k)', report.reliability.itemCount],
           ['Rata-rata Skor', report.reliability.meanScore],
-          ['Simpangan Baku', report.reliability.stdDev],
+          ['Keragaman Nilai (Simpangan Baku)', report.reliability.stdDev],
           [
-            'Korelasi XY (Belah Dua Ganjil-Genap)',
+            'Kecocokan Soal Ganjil vs Genap',
             report.reliability.splitHalfR ?? '-',
           ],
           [
-            'Reliabilitas Tes (Spearman-Brown r11)',
+            'Nilai Konsistensi Tes Keseluruhan',
             report.reliability.spearmanBrownR ?? '-',
           ],
-          ['Interpretasi Reliabilitas', report.reliability.category],
-          ['r Tabel (alpha = 5%)', report.reliability.rTable5 ?? '-'],
-          ['r Tabel (alpha = 1%)', report.reliability.rTable1 ?? '-'],
+          ['Kesimpulan Konsistensi Tes', report.reliability.category],
+          ['Batas Minimal Valid (Standar 5%)', report.reliability.rTable5 ?? '-'],
+          ['Batas Minimal Valid (Standar 1%)', report.reliability.rTable1 ?? '-'],
         ],
       };
 
@@ -891,18 +905,14 @@ function buildAnatesAbcAOA(
       return {
         sheetName: 'Unggul Asor AnatesV4',
         filePrefix: 'anatesv4-unggul-asor',
-        aoa: [
-          ['Peringkat', 'Nama Siswa', 'Kelas', 'Skor', 'Skor Maks', 'Nilai (%)', 'Kelompok (27%)'],
-          ...report.rankedStudents.map((st) => [
-            st.rank,
-            st.nama,
-            st.kelas,
-            st.score,
-            st.maxScore,
-            st.scorePercent,
-            st.group,
-          ]),
-        ],
+        aoa: buildDistinguishedUnggulAsorAOA({
+          rankedStudents: report.rankedStudents,
+          groupSize: report.groupSize,
+          engineLabel: 'Anates V4',
+          modeLabel: 'Pilihan Ganda (ABC)',
+          scoreHeader: 'Skor',
+          percentHeader: 'Nilai (%)',
+        }),
       };
 
     case 'daya-pembeda':
@@ -911,13 +921,13 @@ function buildAnatesAbcAOA(
         filePrefix: 'anatesv4-daya-pembeda',
         aoa: [
           [
-            'No Butir',
+            'No Soal',
             'Kunci',
-            `Unggul (n=${report.groupSize})`,
-            `Asor (n=${report.groupSize})`,
-            'Beda (U - A)',
-            'DP (%)',
-            'Tafsiran',
+            `Kelompok Unggul (n=${report.groupSize})`,
+            `Kelompok Asor (n=${report.groupSize})`,
+            'Selisih (U - A)',
+            'Daya Pembeda (%)',
+            'Kategori',
           ],
           ...keyed.map((it) => [
             it.questionNumber,
@@ -936,7 +946,7 @@ function buildAnatesAbcAOA(
         sheetName: 'Kesukaran AnatesV4',
         filePrefix: 'anatesv4-tingkat-kesukaran',
         aoa: [
-          ['No Butir', 'Kunci', `Jml Benar (N=${report.reliability.studentCount})`, 'TK (%)', 'Tafsiran Anates V4'],
+          ['No Soal', 'Kunci', `Jml Benar (N=${report.reliability.studentCount})`, 'Tingkat Kesulitan (%)', 'Kategori Kesulitan'],
           ...keyed.map((it) => [
             it.questionNumber,
             it.key,
@@ -949,10 +959,10 @@ function buildAnatesAbcAOA(
 
     case 'korelasi':
       return {
-        sheetName: 'Korelasi AnatesV4',
+        sheetName: 'Kelayakan AnatesV4',
         filePrefix: 'anatesv4-korelasi',
         aoa: [
-          ['No Butir', 'Kunci', 'Korelasi (r)', 'r Tabel 5%', 'r Tabel 1%', 'Signifikansi'],
+          ['No Soal', 'Kunci', 'Skor Kesesuaian (r)', 'Batas Minimal 5%', 'Batas Minimal 1%', 'Status Kelayakan'],
           ...keyed.map((it) => [
             it.questionNumber,
             it.key,
@@ -969,7 +979,7 @@ function buildAnatesAbcAOA(
       for (const opt of optLetters) {
         headers.push(`${opt} (Jml)`, `${opt} (Kode)`);
       }
-      headers.push('Ringkasan Kode');
+      headers.push('Ringkasan Pengecoh');
       return {
         sheetName: 'Pengecoh AnatesV4',
         filePrefix: 'anatesv4-pengecoh',
@@ -994,14 +1004,14 @@ function buildAnatesAbcAOA(
         filePrefix: 'anatesv4-rekap',
         aoa: [
           [
-            'No Butir',
+            'No Soal',
             'Kunci',
-            'DP (%)',
-            'TK (%)',
-            'Tafsiran TK (Anates V4)',
-            'Korelasi (r)',
-            'Signifikansi',
-            'Kode Pengecoh',
+            'Daya Pembeda (%)',
+            'Tingkat Kesulitan (%)',
+            'Kategori Kesulitan',
+            'Skor Kesesuaian (r)',
+            'Status Kelayakan',
+            'Penilaian Pengecoh',
           ],
           ...keyed.map((it) => [
             it.questionNumber,
@@ -1025,25 +1035,25 @@ function buildAnatesUraianAOA(
   switch (section) {
     case 'reliabilitas':
       return {
-        sheetName: 'Reliabilitas AnatesV4',
+        sheetName: 'Konsistensi Tes AnatesV4',
         filePrefix: 'anatesv4-uraian-reliabilitas',
         aoa: [
-          ['Parameter Pengujian (Metode Anates V4)', 'Nilai'],
-          ['Jumlah Subjek (N)', report.reliability.studentCount],
+          ['Parameter Pengujian Konsistensi Tes (Anates V4)', 'Nilai'],
+          ['Jumlah Peserta (N)', report.reliability.studentCount],
           ['Jumlah Butir (k)', report.reliability.itemCount],
           ['Rata-rata Skor Total', report.reliability.meanScore],
-          ['Simpangan Baku', report.reliability.stdDev],
+          ['Keragaman Nilai (Simpangan Baku)', report.reliability.stdDev],
           [
-            'Korelasi XY (Belah Dua Ganjil-Genap)',
+            'Kecocokan Butir Ganjil vs Genap',
             report.reliability.splitHalfR ?? '-',
           ],
           [
-            'Reliabilitas Tes (Spearman-Brown r11)',
+            'Nilai Konsistensi Tes Keseluruhan',
             report.reliability.spearmanBrownR ?? '-',
           ],
-          ['Interpretasi Reliabilitas', report.reliability.category],
-          ['r Tabel (alpha = 5%)', report.reliability.rTable5 ?? '-'],
-          ['r Tabel (alpha = 1%)', report.reliability.rTable1 ?? '-'],
+          ['Kesimpulan Konsistensi Tes', report.reliability.category],
+          ['Batas Minimal Valid (Standar 5%)', report.reliability.rTable5 ?? '-'],
+          ['Batas Minimal Valid (Standar 1%)', report.reliability.rTable1 ?? '-'],
         ],
       };
 
@@ -1051,18 +1061,14 @@ function buildAnatesUraianAOA(
       return {
         sheetName: 'Unggul Asor AnatesV4',
         filePrefix: 'anatesv4-uraian-unggul-asor',
-        aoa: [
-          ['Peringkat', 'Nama Peserta', 'Kelas', 'Skor', 'Skor Maks', 'Capaian (%)', 'Kelompok (27%)'],
-          ...report.rankedStudents.map((st) => [
-            st.rank,
-            st.nama,
-            st.kelas,
-            st.score,
-            st.maxScore,
-            st.scorePercent,
-            st.group,
-          ]),
-        ],
+        aoa: buildDistinguishedUnggulAsorAOA({
+          rankedStudents: report.rankedStudents,
+          groupSize: report.groupSize,
+          engineLabel: 'Anates V4',
+          modeLabel: report.subMode === 'uraian' ? 'Soal Uraian' : 'Angket / Skala Likert',
+          scoreHeader: 'Skor',
+          percentHeader: 'Capaian (%)',
+        }),
       };
 
     case 'daya-pembeda':
@@ -1070,7 +1076,7 @@ function buildAnatesUraianAOA(
         sheetName: 'Daya Pembeda AnatesV4',
         filePrefix: 'anatesv4-uraian-daya-pembeda',
         aoa: [
-          ['No Butir', 'Skor Maks', 'Rata2 Unggul', 'Rata2 Asor', 'Beda (U - A)', 'DP (%)', 'Tafsiran'],
+          ['No Butir', 'Skor Maks', 'Rata2 Unggul', 'Rata2 Asor', 'Selisih (U - A)', 'Daya Pembeda (%)', 'Kategori'],
           ...report.items.map((it) => [
             it.itemNumber,
             it.maxScore,
@@ -1088,7 +1094,7 @@ function buildAnatesUraianAOA(
         sheetName: 'Kesukaran AnatesV4',
         filePrefix: 'anatesv4-uraian-kesukaran',
         aoa: [
-          ['No Butir', 'Skor Maks', 'Rata-rata', 'TK (%)', 'Tafsiran Anates V4'],
+          ['No Butir', 'Skor Maks', 'Rata-rata', 'Tingkat Kesulitan (%)', 'Kategori Kesulitan'],
           ...report.items.map((it) => [
             it.itemNumber,
             it.maxScore,
@@ -1101,10 +1107,10 @@ function buildAnatesUraianAOA(
 
     case 'korelasi':
       return {
-        sheetName: 'Korelasi AnatesV4',
+        sheetName: 'Kelayakan AnatesV4',
         filePrefix: 'anatesv4-uraian-korelasi',
         aoa: [
-          ['No Butir', 'Skor Maks', 'Korelasi (r)', 'r Tabel 5%', 'r Tabel 1%', 'Signifikansi'],
+          ['No Butir', 'Skor Maks', 'Skor Kesesuaian (r)', 'Batas Minimal 5%', 'Batas Minimal 1%', 'Status Kelayakan'],
           ...report.items.map((it) => [
             it.itemNumber,
             it.maxScore,
@@ -1121,7 +1127,7 @@ function buildAnatesUraianAOA(
         sheetName: 'Sebaran AnatesV4',
         filePrefix: 'anatesv4-uraian-sebaran',
         aoa: [
-          ['No Butir', 'Skor Maks', 'Rata-rata', 'Simpangan Baku', 'Sebaran Skor'],
+          ['No Butir', 'Skor Maks', 'Rata-rata', 'Keragaman Nilai (SD)', 'Sebaran Skor'],
           ...report.items.map((it) => [
             it.itemNumber,
             it.maxScore,
@@ -1142,11 +1148,11 @@ function buildAnatesUraianAOA(
             'No Butir',
             'Skor Maks',
             'Rata-rata',
-            'DP (%)',
-            'TK (%)',
-            'Tafsiran TK (Anates V4)',
-            'Korelasi (r)',
-            'Signifikansi',
+            'Daya Pembeda (%)',
+            'Tingkat Kesulitan (%)',
+            'Kategori Kesulitan',
+            'Skor Kesesuaian (r)',
+            'Status Kelayakan',
           ],
           ...report.items.map((it) => [
             it.itemNumber,
@@ -1168,13 +1174,24 @@ function saveSingleWorkbook(
   filePrefix: string,
   aoa: (string | number)[][],
   examTitle: string,
+  isUnggulAsor = false,
 ): string {
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const colCount = aoa[0]?.length || 1;
-  ws['!cols'] = Array.from({ length: colCount }, (_, i) => ({
-    wch: i === 0 ? 18 : i === 1 ? 24 : 16,
-  }));
-  if (aoa.length > 1) {
+  ws['!cols'] = isUnggulAsor
+    ? [
+        { wch: 18 },
+        { wch: 28 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 18 },
+        { wch: 25 },
+      ]
+    : Array.from({ length: colCount }, (_, i) => ({
+        wch: i === 0 ? 18 : i === 1 ? 24 : 16,
+      }));
+  if (!isUnggulAsor && aoa.length > 1) {
     ws['!autofilter'] = {
       ref: XLSX.utils.encode_range({
         s: { r: 0, c: 0 },
@@ -1206,8 +1223,8 @@ function saveTextFile(
   const headerLines = [
     `LAPORAN METODE ANATES V4 — ${sheetName.toUpperCase()}`,
     `Ujian / Instrumen : ${title}`,
-    `Subjek (N)        : ${studentCount}`,
-    `Butir (k)         : ${itemCount}`,
+    `Peserta (N)       : ${studentCount}`,
+    `Soal / Butir (k)  : ${itemCount}`,
     `Tanggal           : ${new Date().toISOString().slice(0, 10)}`,
     '='.repeat(72),
     '',
@@ -1240,7 +1257,13 @@ export function exportAnatesAbcSingleExcel(
   examTitle: string,
 ): string {
   const { sheetName, filePrefix, aoa } = buildAnatesAbcAOA(section, report);
-  return saveSingleWorkbook(sheetName, filePrefix, aoa, examTitle);
+  return saveSingleWorkbook(
+    sheetName,
+    filePrefix,
+    aoa,
+    examTitle,
+    section === 'unggul-asor',
+  );
 }
 
 export function exportAnatesAbcAllExcel(
@@ -1261,9 +1284,20 @@ export function exportAnatesAbcAllExcel(
     const { sheetName, aoa } = buildAnatesAbcAOA(sec, report);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const colCount = aoa[0]?.length || 1;
-    ws['!cols'] = Array.from({ length: colCount }, (_, i) => ({
-      wch: i === 0 ? 18 : i === 1 ? 22 : 16,
-    }));
+    ws['!cols'] =
+      sec === 'unggul-asor'
+        ? [
+            { wch: 18 },
+            { wch: 28 },
+            { wch: 15 },
+            { wch: 15 },
+            { wch: 15 },
+            { wch: 18 },
+            { wch: 25 },
+          ]
+        : Array.from({ length: colCount }, (_, i) => ({
+            wch: i === 0 ? 18 : i === 1 ? 22 : 16,
+          }));
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
   }
   const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
@@ -1282,6 +1316,23 @@ export function exportAnatesAbcSingleText(
   examTitle: string,
 ): string {
   const { sheetName, filePrefix, aoa } = buildAnatesAbcAOA(section, report);
+  if (section === 'unggul-asor') {
+    const content = buildDistinguishedUnggulAsorText({
+      rankedStudents: report.rankedStudents,
+      groupSize: report.groupSize,
+      examTitle,
+      engineLabel: 'Anates V4 (Pilihan Ganda ABC)',
+      itemCount: report.reliability.itemCount,
+      scoreLabel: 'Skor',
+    });
+    const blob = new Blob(['\uFEFF' + content], {
+      type: 'text/plain;charset=utf-8',
+    });
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `${filePrefix}-${makeSlug(examTitle)}-${dateStr}.txt`;
+    triggerFileDownload(blob, filename);
+    return filename;
+  }
   return saveTextFile(
     sheetName,
     filePrefix,
@@ -1298,7 +1349,13 @@ export function exportAnatesUraianSingleExcel(
   examTitle: string,
 ): string {
   const { sheetName, filePrefix, aoa } = buildAnatesUraianAOA(section, report);
-  return saveSingleWorkbook(sheetName, filePrefix, aoa, examTitle);
+  return saveSingleWorkbook(
+    sheetName,
+    filePrefix,
+    aoa,
+    examTitle,
+    section === 'unggul-asor',
+  );
 }
 
 export function exportAnatesUraianAllExcel(
@@ -1319,9 +1376,20 @@ export function exportAnatesUraianAllExcel(
     const { sheetName, aoa } = buildAnatesUraianAOA(sec, report);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const colCount = aoa[0]?.length || 1;
-    ws['!cols'] = Array.from({ length: colCount }, (_, i) => ({
-      wch: i === 0 ? 18 : i === 1 ? 22 : 16,
-    }));
+    ws['!cols'] =
+      sec === 'unggul-asor'
+        ? [
+            { wch: 18 },
+            { wch: 28 },
+            { wch: 15 },
+            { wch: 15 },
+            { wch: 15 },
+            { wch: 18 },
+            { wch: 25 },
+          ]
+        : Array.from({ length: colCount }, (_, i) => ({
+            wch: i === 0 ? 18 : i === 1 ? 22 : 16,
+          }));
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
   }
   const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
@@ -1340,6 +1408,23 @@ export function exportAnatesUraianSingleText(
   examTitle: string,
 ): string {
   const { sheetName, filePrefix, aoa } = buildAnatesUraianAOA(section, report);
+  if (section === 'unggul-asor') {
+    const content = buildDistinguishedUnggulAsorText({
+      rankedStudents: report.rankedStudents,
+      groupSize: report.groupSize,
+      examTitle,
+      engineLabel: 'Anates V4 (Angket / Uraian)',
+      itemCount: report.reliability.itemCount,
+      scoreLabel: 'Skor',
+    });
+    const blob = new Blob(['\uFEFF' + content], {
+      type: 'text/plain;charset=utf-8',
+    });
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `${filePrefix}-${makeSlug(examTitle)}-${dateStr}.txt`;
+    triggerFileDownload(blob, filename);
+    return filename;
+  }
   return saveTextFile(
     sheetName,
     filePrefix,

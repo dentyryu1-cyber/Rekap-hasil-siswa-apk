@@ -31,7 +31,9 @@ import {
   computeFullItemAnalysis,
   detectOptionMode,
   type FullItemAnalysisReport,
+  type RankedStudent,
 } from './itemAnalysis';
+import { formatScoreRange, splitUnggulAsorGroups } from './unggulAsorFormat';
 import {
   computeFullUraianAnalysis,
   computeUraianStudentStats,
@@ -62,6 +64,12 @@ const BRAND_SURFACE_ALT = 'F7FAF8';
 const ANATES_PRIMARY = '8A511D';
 const ANATES_PRIMARY_LIGHT = 'FDF3E7';
 const ANATES_SURFACE_ALT = 'FBF8F4';
+const UNGGUL_PRIMARY = '1E3A5F';
+const UNGGUL_ALT = 'F4F8FC';
+const ASOR_PRIMARY = '912018';
+const ASOR_ALT = 'FFF6F6';
+const SLATE_PRIMARY = '475467';
+const SLATE_ALT = 'F8FAFC';
 const BORDER_HEX = 'CFDAD4';
 const TEXT_DARK = '14211C';
 const TEXT_MUTED = '52635C';
@@ -765,6 +773,211 @@ function makeDocHeaderAndFooter(titleText: string, variantLabel: string) {
   };
 }
 
+function buildAbbreviationLegendBlocks(
+  mode: 'abc' | 'uraian',
+): Array<Paragraph | Table> {
+  const pairs: Array<[string, string, string, string]> =
+    mode === 'abc'
+      ? [
+          ['N', 'Jumlah seluruh peserta tes', 'k', 'Jumlah soal berkunci yang dianalisis'],
+          ['P', 'Tingkat Kesulitan versi rekapinJx (0,00 – 1,00)', 'TK (%)', 'Persentase Tingkat Kesulitan versi Anates V4'],
+          ['D / DP / DP (%)', 'Daya Pembeda (selisih capaian Unggul vs Asor)', 'r / r hitung', 'Skor kesesuaian tiap soal terhadap total nilai'],
+          ['r tabel', 'Batas minimal skor kelayakan soal (5% & 1%)', 'r₁₁', 'Nilai konsistensi (keajegan) tes keseluruhan'],
+          ['KR-20', 'Ukuran konsistensi soal pilihan ganda (rekapinJx)', 'XY', 'Nilai kecocokan antara soal ganjil dan soal genap'],
+          ['SD / S²t', 'Keragaman nilai siswa (Simpangan Baku & Varians)', 'U / A (27%)', 'Kelompok Unggul (27% tertinggi) & Asor (27% terendah)'],
+          ['SM / M / Sdg / Skr / SS', 'Sangat Mudah / Mudah / Sedang / Sukar / Sgt Sukar', '*** / ++ / + / - / -- / ---', 'Kode pengecoh Anates V4 (Kunci / Sgt Baik / Baik / Kurang / Buruk / 0)'],
+        ]
+      : [
+          ['N', 'Jumlah seluruh peserta / responden', 'k', 'Jumlah butir soal / angket yang dianalisis'],
+          ['α (Alpha)', 'Ukuran konsistensi soal uraian/angket & batas standar (5% / 1%)', 'r₁₁', 'Nilai konsistensi (keajegan) instrumen keseluruhan'],
+          ['P', 'Tingkat Kesulitan versi rekapinJx (0,00 – 1,00)', 'TK (%)', 'Persentase Tingkat Kesulitan versi Anates V4'],
+          ['D / DP / DP (%)', 'Daya Pembeda (selisih capaian Unggul vs Asor)', 'r / r hitung', 'Skor kesesuaian tiap butir terhadap total skor'],
+          ['r tabel', 'Batas minimal skor kelayakan butir (5% & 1%)', 'XY', 'Nilai kecocokan antara butir ganjil dan butir genap'],
+          ['SD / S²t', 'Keragaman nilai peserta (Simpangan Baku & Varians)', 'Mean / Maks', 'Rata-rata skor butir & skor maksimal butir'],
+          ['U / A (27%)', 'Kelompok Unggul (27% tertinggi) & Asor (27% terendah)', 'SM / M / Sdg / Skr / SS', 'Sangat Mudah / Mudah / Sedang / Sukar / Sgt Sukar'],
+        ];
+
+  const legendTable = buildStyledTable(
+    [
+      { label: 'Singkatan', widthPct: 16 },
+      { label: 'Arti / Keterangan', widthPct: 34 },
+      { label: 'Singkatan', widthPct: 16 },
+      { label: 'Arti / Keterangan', widthPct: 34 },
+    ],
+    pairs.map(([k1, v1, k2, v2]) => [
+      { text: k1, bold: true, color: UNGGUL_PRIMARY },
+      { text: v1 },
+      { text: k2, bold: true, color: UNGGUL_PRIMARY },
+      { text: v2 },
+    ]),
+    { headerFill: UNGGUL_PRIMARY, altRowFill: UNGGUL_ALT },
+  );
+
+  return [
+    makeSectionHeading('Keterangan Singkatan & Istilah Analisis', UNGGUL_PRIMARY),
+    new Paragraph({
+      spacing: { before: 0, after: 80 },
+      children: [
+        new TextRun({
+          text: 'Daftar istilah dan singkatan berikut berlaku untuk seluruh tabel statistik pada dokumen ini:',
+          italics: true,
+          size: 18,
+          color: TEXT_MUTED,
+          font: 'Calibri',
+        }),
+      ],
+    }),
+    legendTable,
+  ];
+}
+
+function buildUnggulAsorWordBlocks(params: {
+  heading: string;
+  rankedStudents: RankedStudent[];
+  groupSize: number;
+  scoreLabel: string;
+  percentLabel: string;
+  participantLabel: string;
+}): Array<Paragraph | Table> {
+  const {
+    heading,
+    rankedStudents,
+    groupSize,
+    scoreLabel,
+    percentLabel,
+    participantLabel,
+  } = params;
+  const breakdown = splitUnggulAsorGroups(rankedStudents);
+
+  const summaryTable = buildStyledTable(
+    [
+      { label: 'Kelompok (Metode 27%)', widthPct: 36 },
+      { label: 'Jumlah Peserta', align: AlignmentType.CENTER, widthPct: 18 },
+      { label: 'Proporsi', align: AlignmentType.CENTER, widthPct: 16 },
+      { label: 'Rentang Skor & Capaian (%)', align: AlignmentType.RIGHT, widthPct: 30 },
+    ],
+    [
+      [
+        { text: 'Kelompok Unggul (27% Atas)', bold: true, color: BRAND_PRIMARY },
+        { text: `${breakdown.upperSummary.count} peserta`, bold: true },
+        { text: `${breakdown.upperSummary.percentOfTotal}%` },
+        { text: formatScoreRange(breakdown.upperSummary), bold: true },
+      ],
+      [
+        { text: 'Kelompok Tengah', bold: true, color: SLATE_PRIMARY },
+        { text: `${breakdown.middleSummary.count} peserta` },
+        { text: `${breakdown.middleSummary.percentOfTotal}%` },
+        { text: formatScoreRange(breakdown.middleSummary) },
+      ],
+      [
+        { text: 'Kelompok Asor (27% Bawah)', bold: true, color: ASOR_PRIMARY },
+        { text: `${breakdown.lowerSummary.count} peserta`, bold: true },
+        { text: `${breakdown.lowerSummary.percentOfTotal}%` },
+        { text: formatScoreRange(breakdown.lowerSummary), bold: true },
+      ],
+    ],
+    { headerFill: UNGGUL_PRIMARY, altRowFill: UNGGUL_ALT },
+  );
+
+  const makeGroupTable = (
+    list: RankedStudent[],
+    headerFill: string,
+    altRowFill: string,
+    tag: string,
+    tagColor: string,
+  ) =>
+    buildStyledTable(
+      [
+        { label: 'Rank', align: AlignmentType.CENTER, widthPct: 8 },
+        { label: participantLabel, widthPct: 34 },
+        { label: 'Kelas', align: AlignmentType.CENTER, widthPct: 14 },
+        { label: scoreLabel, align: AlignmentType.RIGHT, widthPct: 12 },
+        { label: percentLabel, align: AlignmentType.RIGHT, widthPct: 14 },
+        { label: 'Status Kelompok', align: AlignmentType.CENTER, widthPct: 18 },
+      ],
+      list.map((st) => [
+        { text: st.rank, bold: true },
+        { text: st.nama, bold: true },
+        { text: st.kelas },
+        { text: `${st.score}/${st.maxScore}` },
+        { text: `${st.scorePercent.toFixed(1)}%`, bold: true },
+        { text: tag, bold: true, color: tagColor },
+      ]),
+      { headerFill, altRowFill },
+    );
+
+  const makeSubLabel = (label: string, colorHex: string) =>
+    new Paragraph({
+      spacing: { before: 160, after: 70 },
+      children: [
+        new TextRun({
+          text: label,
+          bold: true,
+          size: 21,
+          color: colorHex,
+          font: 'Calibri',
+        }),
+      ],
+    });
+
+  const blocks: Array<Paragraph | Table> = [
+    makeSectionHeading(heading, UNGGUL_PRIMARY),
+    new Paragraph({
+      spacing: { before: 0, after: 100 },
+      children: [
+        new TextRun({
+          text: `Format khusus terpisah dari tabel analisis butir (n = ${groupSize} peserta per kelompok unggul/asor dari total N = ${breakdown.total} peserta).`,
+          italics: true,
+          size: 18,
+          color: TEXT_MUTED,
+          font: 'Calibri',
+        }),
+      ],
+    }),
+    summaryTable,
+    makeSubLabel(
+      `A. Kelompok Unggul — 27% Atas (${breakdown.upper.length} peserta)`,
+      BRAND_PRIMARY,
+    ),
+    makeGroupTable(
+      breakdown.upper,
+      BRAND_PRIMARY,
+      BRAND_SURFACE_ALT,
+      'Unggul (27% Atas)',
+      BRAND_PRIMARY,
+    ),
+    makeSubLabel(
+      `B. Kelompok Asor — 27% Bawah (${breakdown.lower.length} peserta)`,
+      ASOR_PRIMARY,
+    ),
+    makeGroupTable(
+      breakdown.lower,
+      ASOR_PRIMARY,
+      ASOR_ALT,
+      'Asor (27% Bawah)',
+      ASOR_PRIMARY,
+    ),
+  ];
+
+  if (breakdown.middle.length > 0) {
+    blocks.push(
+      makeSubLabel(
+        `C. Kelompok Tengah (${breakdown.middle.length} peserta)`,
+        SLATE_PRIMARY,
+      ),
+      makeGroupTable(
+        breakdown.middle,
+        SLATE_PRIMARY,
+        SLATE_ALT,
+        'Tengah',
+        SLATE_PRIMARY,
+      ),
+    );
+  }
+
+  return blocks;
+}
+
 function buildAbcRekapinjxBlocks(params: {
   report: FullItemAnalysisReport;
   questionCount: number;
@@ -841,33 +1054,6 @@ function buildAbcRekapinjxBlocks(params: {
     ],
   );
 
-  const studentTable = buildStyledTable(
-    [
-      { label: 'Rank', align: AlignmentType.CENTER, widthPct: 8 },
-      { label: 'Nama Siswa', widthPct: 34 },
-      { label: 'Kelas', align: AlignmentType.CENTER, widthPct: 14 },
-      { label: 'Benar', align: AlignmentType.RIGHT, widthPct: 12 },
-      { label: 'Nilai (%)', align: AlignmentType.RIGHT, widthPct: 14 },
-      { label: 'Kelompok', align: AlignmentType.CENTER, widthPct: 18 },
-    ],
-    report.rankedStudents.map((st) => {
-      const grpStyle =
-        st.group === 'Unggul'
-          ? { color: BRAND_PRIMARY, shading: BRAND_PRIMARY_LIGHT }
-          : st.group === 'Asor'
-            ? { color: ANATES_PRIMARY, shading: ANATES_PRIMARY_LIGHT }
-            : { color: TEXT_MUTED };
-      return [
-        { text: st.rank },
-        { text: st.nama, bold: true },
-        { text: st.kelas },
-        { text: `${st.score}/${st.maxScore}` },
-        { text: `${st.scorePercent.toFixed(1)}%`, bold: true },
-        { text: st.group, bold: st.group !== 'Tengah', ...grpStyle },
-      ];
-    }),
-  );
-
   const keyedItems = report.items.filter((it) => it.hasKey);
   const itemTable = buildStyledTable(
     [
@@ -941,8 +1127,14 @@ function buildAbcRekapinjxBlocks(params: {
       qualityChart,
       'Ringkasan keputusan kelayakan butir soal versi rekapinJx (Dipakai, Revisi, Dibuang).',
     ),
-    makeSectionHeading(`${sectionPrefix}3. Peringkat Nilai Siswa & Kelompok Unggul–Asor (27%)`),
-    studentTable,
+    ...buildUnggulAsorWordBlocks({
+      heading: `${sectionPrefix}3. Analisis Khusus Kelompok Unggul & Asor (Metode 27%)`,
+      rankedStudents: report.rankedStudents,
+      groupSize: report.groupSize,
+      scoreLabel: 'Benar',
+      percentLabel: 'Nilai (%)',
+      participantLabel: 'Nama Siswa',
+    }),
     makeSectionHeading(`${sectionPrefix}4. Rekap Analisis Butir Soal Lengkap (rekapinJx)`),
     itemTable,
     makeSectionHeading(`${sectionPrefix}5. Sebaran Jawaban & Kualitas Pengecoh (≥5%)`),
@@ -978,38 +1170,38 @@ function buildAbcAnatesBlocks(params: {
 
   const relTable = buildStyledTable(
     [
-      { label: 'Parameter Pengujian (Metode Anates V4)', widthPct: 52 },
+      { label: 'Parameter Konsistensi Tes (Anates V4)', widthPct: 52 },
       { label: 'Hasil Nilai', align: AlignmentType.RIGHT, widthPct: 24 },
       { label: 'Keterangan / Kategori', widthPct: 24 },
     ],
     [
       [
-        { text: 'Jumlah Subjek (N)', bold: true },
+        { text: 'Jumlah Siswa (N)', bold: true },
         { text: anates.reliability.studentCount },
         { text: `Unggul/Asor: ${anates.groupSize} siswa/kel.` },
       ],
       [
-        { text: 'Jumlah Butir Berkunci (k)', bold: true },
+        { text: 'Jumlah Soal Berkunci (k)', bold: true },
         { text: `${anates.reliability.itemCount} dari ${questionCount}` },
         { text: `${optionMode} pilihan (A–${optionMode === 5 ? 'E' : 'D'})` },
       ],
       [
-        { text: 'Rata-rata & Simpangan Baku', bold: true },
+        { text: 'Rata-rata & Keragaman Nilai', bold: true },
         { text: `${anates.reliability.meanScore} (${overallAvgPct}%)` },
-        { text: `Simpangan baku: ${anates.reliability.stdDev}` },
+        { text: `Simpangan baku (SD): ${anates.reliability.stdDev}` },
       ],
       [
-        { text: 'Korelasi XY (Belah Dua Ganjil–Genap)', bold: true },
+        { text: 'Kecocokan Soal Ganjil vs Genap (XY)', bold: true },
         {
           text:
             anates.reliability.splitHalfR !== null
               ? anates.reliability.splitHalfR.toFixed(3)
               : '—',
         },
-        { text: 'Ganjil vs Genap (nomor butir)' },
+        { text: 'Perbandingan soal ganjil & genap' },
       ],
       [
-        { text: 'Reliabilitas Tes (Spearman-Brown r11)', bold: true },
+        { text: 'Nilai Konsistensi Tes Keseluruhan', bold: true },
         {
           text:
             anates.reliability.spearmanBrownR !== null
@@ -1020,12 +1212,12 @@ function buildAbcAnatesBlocks(params: {
         { text: anates.reliability.category, bold: true, color: ANATES_PRIMARY },
       ],
       [
-        { text: 'Batas r Tabel (α = 5% dan α = 1%)', bold: true },
+        { text: 'Batas Minimal Valid (Standar 5% & 1%)', bold: true },
         {
           text: `${anates.reliability.rTable5?.toFixed(3) ?? '—'} / ${anates.reliability.rTable1?.toFixed(3) ?? '—'}`,
         },
         {
-          text: `${anates.summaryCounts.significant} signifikan · ${anates.summaryCounts.notSignificant} tidak`,
+          text: `${anates.summaryCounts.significant} layak · ${anates.summaryCounts.notSignificant} perlu ditinjau`,
         },
       ],
     ],
@@ -1041,10 +1233,10 @@ function buildAbcAnatesBlocks(params: {
       { label: 'Asor', align: AlignmentType.RIGHT, widthPct: 7 },
       { label: 'DP (%)', align: AlignmentType.RIGHT, widthPct: 9 },
       { label: 'TK (%)', align: AlignmentType.RIGHT, widthPct: 9 },
-      { label: 'Tafsiran TK', align: AlignmentType.CENTER, widthPct: 13 },
-      { label: 'r Hitung', align: AlignmentType.RIGHT, widthPct: 9 },
-      { label: 'Signifikansi', align: AlignmentType.CENTER, widthPct: 16 },
-      { label: 'Kode Pengecoh', align: AlignmentType.LEFT, widthPct: 16 },
+      { label: 'Kategori TK', align: AlignmentType.CENTER, widthPct: 13 },
+      { label: 'Skor r', align: AlignmentType.RIGHT, widthPct: 9 },
+      { label: 'Status Kelayakan', align: AlignmentType.CENTER, widthPct: 16 },
+      { label: 'Pengecoh', align: AlignmentType.LEFT, widthPct: 16 },
     ],
     keyed.map((it) => {
       const sigStyle = decisionColor(it.significance);
@@ -1125,18 +1317,26 @@ function buildAbcAnatesBlocks(params: {
 
   return [
     makeSectionHeading(
-      `${sectionPrefix}1. Reliabilitas Belah Dua Spearman-Brown (Metode Anates V4)`,
+      `${sectionPrefix}1. Konsistensi Tes Keseluruhan (Metode Anates V4)`,
       ANATES_PRIMARY,
     ),
     relTable,
     ...charts,
+    ...buildUnggulAsorWordBlocks({
+      heading: `${sectionPrefix}3. Analisis Khusus Kelompok Unggul & Asor (Metode 27%)`,
+      rankedStudents: anates.rankedStudents,
+      groupSize: anates.groupSize,
+      scoreLabel: 'Skor',
+      percentLabel: 'Nilai (%)',
+      participantLabel: 'Nama Siswa',
+    }),
     makeSectionHeading(
-      `${sectionPrefix}3. Rekap Analisis Butir Versi Anates V4 (DP %, TK %, Signifikansi)`,
+      `${sectionPrefix}4. Rekap Analisis Butir Versi Anates V4 (DP %, TK %, Kelayakan)`,
       ANATES_PRIMARY,
     ),
     rekapTable,
     makeSectionHeading(
-      `${sectionPrefix}4. Kualitas Pengecoh Versi Anates V4 (Kode ***, ++, +, -, --, ---)`,
+      `${sectionPrefix}5. Kualitas Pengecoh Versi Anates V4 (Kode ***, ++, +, -, --, ---)`,
       ANATES_PRIMARY,
     ),
     distractorTable,
@@ -1144,7 +1344,7 @@ function buildAbcAnatesBlocks(params: {
       spacing: { before: 80, after: 140 },
       children: [
         new TextRun({
-          text: 'Keterangan kode pengecoh Anates V4: *** = Kunci Jawaban · ++ = Sangat Baik · + = Baik · - = Kurang Baik · -- = Buruk · --- = Sangat Buruk (0 pemilih).',
+          text: 'Keterangan pengecoh Anates V4 (dibanding rata-rata pemilih salah ideal): *** = Kunci Jawaban · ++ = Sangat Baik · + = Baik · - = Kurang Baik · -- = Buruk · --- = Sangat Buruk (0 pemilih). Status Kelayakan: Signifikan / Sangat Signifikan = soal layak dipakai; Tidak Signifikan = perlu ditinjau ulang.',
           italics: true,
           size: 17,
           color: TEXT_MUTED,
@@ -1229,33 +1429,6 @@ function buildUraianRekapinjxBlocks(params: {
     ],
   );
 
-  const studentTable = buildStyledTable(
-    [
-      { label: 'Rank', align: AlignmentType.CENTER, widthPct: 8 },
-      { label: 'Nama Peserta', widthPct: 34 },
-      { label: 'Kelas', align: AlignmentType.CENTER, widthPct: 14 },
-      { label: 'Skor Total', align: AlignmentType.RIGHT, widthPct: 14 },
-      { label: 'Capaian (%)', align: AlignmentType.RIGHT, widthPct: 12 },
-      { label: 'Kelompok', align: AlignmentType.CENTER, widthPct: 18 },
-    ],
-    report.rankedStudents.map((st) => {
-      const grpStyle =
-        st.group === 'Unggul'
-          ? { color: BRAND_PRIMARY, shading: BRAND_PRIMARY_LIGHT }
-          : st.group === 'Asor'
-            ? { color: ANATES_PRIMARY, shading: ANATES_PRIMARY_LIGHT }
-            : { color: TEXT_MUTED };
-      return [
-        { text: st.rank },
-        { text: st.nama, bold: true },
-        { text: st.kelas },
-        { text: `${st.score}/${st.maxScore}` },
-        { text: `${st.scorePercent.toFixed(1)}%`, bold: true },
-        { text: st.group, bold: st.group !== 'Tengah', ...grpStyle },
-      ];
-    }),
-  );
-
   const itemTable = buildStyledTable(
     [
       { label: 'No', align: AlignmentType.CENTER, widthPct: 6 },
@@ -1318,8 +1491,14 @@ function buildUraianRekapinjxBlocks(params: {
       qualityChart,
       'Ringkasan keputusan kualitas butir instrumen versi rekapinJx (Dipakai, Revisi, Dibuang).',
     ),
-    makeSectionHeading(`${sectionPrefix}3. Peringkat Peserta & Kelompok Unggul–Asor (27%)`),
-    studentTable,
+    ...buildUnggulAsorWordBlocks({
+      heading: `${sectionPrefix}3. Analisis Khusus Kelompok Unggul & Asor (Metode 27%)`,
+      rankedStudents: report.rankedStudents,
+      groupSize: report.groupSize,
+      scoreLabel: 'Skor Total',
+      percentLabel: 'Capaian (%)',
+      participantLabel: 'Nama Peserta',
+    }),
     makeSectionHeading(`${sectionPrefix}4. Rekap Analisis Butir Angket / Uraian (rekapinJx)`),
     itemTable,
     makeSectionHeading(`${sectionPrefix}5. Sebaran Skor per Nomor Butir`),
@@ -1353,13 +1532,13 @@ function buildUraianAnatesBlocks(params: {
 
   const relTable = buildStyledTable(
     [
-      { label: 'Parameter Pengujian (Metode Anates V4)', widthPct: 52 },
+      { label: 'Parameter Konsistensi Tes (Anates V4)', widthPct: 52 },
       { label: 'Hasil Nilai', align: AlignmentType.RIGHT, widthPct: 24 },
       { label: 'Keterangan / Kategori', widthPct: 24 },
     ],
     [
       [
-        { text: 'Jumlah Subjek / Responden (N)', bold: true },
+        { text: 'Jumlah Peserta / Responden (N)', bold: true },
         { text: anates.reliability.studentCount },
         { text: `Unggul/Asor: ${anates.groupSize} peserta/kel.` },
       ],
@@ -1369,22 +1548,22 @@ function buildUraianAnatesBlocks(params: {
         { text: modeLabel },
       ],
       [
-        { text: 'Rata-rata & Simpangan Baku', bold: true },
+        { text: 'Rata-rata & Keragaman Nilai', bold: true },
         { text: `${anates.reliability.meanScore} (${overallAvgPct}%)` },
-        { text: `Simpangan baku: ${anates.reliability.stdDev}` },
+        { text: `Simpangan baku (SD): ${anates.reliability.stdDev}` },
       ],
       [
-        { text: 'Korelasi XY (Belah Dua Ganjil–Genap)', bold: true },
+        { text: 'Kecocokan Butir Ganjil vs Genap (XY)', bold: true },
         {
           text:
             anates.reliability.splitHalfR !== null
               ? anates.reliability.splitHalfR.toFixed(3)
               : '—',
         },
-        { text: 'Ganjil vs Genap (nomor butir)' },
+        { text: 'Perbandingan butir ganjil & genap' },
       ],
       [
-        { text: 'Reliabilitas Tes (Spearman-Brown r11)', bold: true },
+        { text: 'Nilai Konsistensi Tes Keseluruhan', bold: true },
         {
           text:
             anates.reliability.spearmanBrownR !== null
@@ -1395,12 +1574,12 @@ function buildUraianAnatesBlocks(params: {
         { text: anates.reliability.category, bold: true, color: ANATES_PRIMARY },
       ],
       [
-        { text: 'Batas r Tabel (α = 5% dan α = 1%)', bold: true },
+        { text: 'Batas Minimal Valid (Standar 5% & 1%)', bold: true },
         {
           text: `${anates.reliability.rTable5?.toFixed(3) ?? '—'} / ${anates.reliability.rTable1?.toFixed(3) ?? '—'}`,
         },
         {
-          text: `${anates.summaryCounts.significant} signifikan · ${anates.summaryCounts.notSignificant} tidak`,
+          text: `${anates.summaryCounts.significant} layak · ${anates.summaryCounts.notSignificant} perlu ditinjau`,
         },
       ],
     ],
@@ -1416,9 +1595,9 @@ function buildUraianAnatesBlocks(params: {
       { label: 'Asor', align: AlignmentType.RIGHT, widthPct: 9 },
       { label: 'DP (%)', align: AlignmentType.RIGHT, widthPct: 10 },
       { label: 'TK (%)', align: AlignmentType.RIGHT, widthPct: 10 },
-      { label: 'Tafsiran TK', align: AlignmentType.CENTER, widthPct: 14 },
-      { label: 'r Hitung', align: AlignmentType.RIGHT, widthPct: 9 },
-      { label: 'Signifikansi', align: AlignmentType.CENTER, widthPct: 16 },
+      { label: 'Kategori TK', align: AlignmentType.CENTER, widthPct: 14 },
+      { label: 'Skor r', align: AlignmentType.RIGHT, widthPct: 9 },
+      { label: 'Status Kelayakan', align: AlignmentType.CENTER, widthPct: 16 },
     ],
     anates.items.map((it) => {
       const sigStyle = decisionColor(it.significance);
@@ -1473,16 +1652,36 @@ function buildUraianAnatesBlocks(params: {
 
   return [
     makeSectionHeading(
-      `${sectionPrefix}1. Reliabilitas Belah Dua Spearman-Brown (Metode Anates V4)`,
+      `${sectionPrefix}1. Konsistensi Tes Keseluruhan (Metode Anates V4)`,
       ANATES_PRIMARY,
     ),
     relTable,
     ...charts,
+    ...buildUnggulAsorWordBlocks({
+      heading: `${sectionPrefix}3. Analisis Khusus Kelompok Unggul & Asor (Metode 27%)`,
+      rankedStudents: anates.rankedStudents,
+      groupSize: anates.groupSize,
+      scoreLabel: 'Skor Total',
+      percentLabel: 'Capaian (%)',
+      participantLabel: 'Nama Peserta',
+    }),
     makeSectionHeading(
-      `${sectionPrefix}3. Rekap Analisis Butir Angket / Uraian Versi Anates V4`,
+      `${sectionPrefix}4. Rekap Analisis Butir Angket / Uraian Versi Anates V4`,
       ANATES_PRIMARY,
     ),
     rekapTable,
+    new Paragraph({
+      spacing: { before: 80, after: 140 },
+      children: [
+        new TextRun({
+          text: 'Keterangan Status Kelayakan: Signifikan / Sangat Signifikan = butir layak & sesuai mengukur kemampuan peserta; Tidak Signifikan = perlu diperbaiki atau ditinjau ulang.',
+          italics: true,
+          size: 17,
+          color: TEXT_MUTED,
+          font: 'Calibri',
+        }),
+      ],
+    }),
   ];
 }
 
@@ -1615,6 +1814,7 @@ export async function exportAbcWordReport(params: {
         }),
       ],
     }),
+    ...buildAbbreviationLegendBlocks('abc'),
   ];
 
   if (reportVariant === 'rekapinjx') {
@@ -1652,12 +1852,12 @@ export async function exportAbcWordReport(params: {
       ],
       [
         [
-          { text: 'Metode Reliabilitas', bold: true },
-          { text: 'KR-20 (Konsistensi Internal)' },
-          { text: 'Belah Dua Ganjil–Genap (Spearman-Brown r11)' },
+          { text: 'Cara Ukur Konsistensi Tes', bold: true },
+          { text: 'Konsistensi internal semua soal (KR-20)' },
+          { text: 'Perbandingan kecocokan soal ganjil & genap (Anates V4)' },
         ],
         [
-          { text: 'Nilai Koefisien Reliabilitas', bold: true },
+          { text: 'Nilai Konsistensi Tes', bold: true },
           {
             text: `${report.reliability.kr20 !== null ? report.reliability.kr20.toFixed(3) : '—'} (${report.reliability.category})`,
             bold: true,
@@ -1670,37 +1870,37 @@ export async function exportAbcWordReport(params: {
           },
         ],
         [
-          { text: 'Signifikansi / Validitas Butir', bold: true },
+          { text: 'Kelayakan Tiap Soal', bold: true },
           {
-            text: `${report.summaryCounts.valid} Valid · ${report.summaryCounts.invalid} Tidak Valid (α = 5%)`,
+            text: `${report.summaryCounts.valid} Valid · ${report.summaryCounts.invalid} Tidak Valid (standar 5%)`,
           },
           {
-            text: `${anatesReport.summaryCounts.significant} Signifikan/Sangat Signifikan · ${anatesReport.summaryCounts.notSignificant} Tidak (α = 5% & 1%)`,
-          },
-        ],
-        [
-          { text: 'Kategori Tingkat Kesukaran', bold: true },
-          {
-            text: `3 Tingkat: ${report.summaryCounts.easy} Mudah · ${report.summaryCounts.medium} Sedang · ${report.summaryCounts.hard} Sukar`,
-          },
-          {
-            text: `5 Tingkat: ${anatesReport.summaryCounts.veryEasy} Sgt Mudah · ${anatesReport.summaryCounts.easy} Mudah · ${anatesReport.summaryCounts.medium} Sedang · ${anatesReport.summaryCounts.hard} Sukar · ${anatesReport.summaryCounts.veryHard} Sgt Sukar`,
+            text: `${anatesReport.summaryCounts.significant} Layak (Signifikan) · ${anatesReport.summaryCounts.notSignificant} Perlu Ditinjau`,
           },
         ],
         [
-          { text: 'Penilaian Pengecoh', bold: true },
-          { text: 'Ambang minimal ≥ 5% pemilih' },
-          { text: 'Kode ***, ++, +, -, --, --- berbasis nilai ideal (N−B)/(m−1)' },
+          { text: 'Kategori Tingkat Kesulitan', bold: true },
+          {
+            text: `3 Kategori: ${report.summaryCounts.easy} Mudah · ${report.summaryCounts.medium} Sedang · ${report.summaryCounts.hard} Sukar`,
+          },
+          {
+            text: `5 Kategori: ${anatesReport.summaryCounts.veryEasy} Sgt Mudah · ${anatesReport.summaryCounts.easy} Mudah · ${anatesReport.summaryCounts.medium} Sedang · ${anatesReport.summaryCounts.hard} Sukar · ${anatesReport.summaryCounts.veryHard} Sgt Sukar`,
+          },
+        ],
+        [
+          { text: 'Penilaian Pilihan Pengecoh', bold: true },
+          { text: 'Minimal dipilih ≥ 5% siswa' },
+          { text: 'Kode ***, ++, +, -, --, --- (dibanding jumlah pemilih ideal)' },
         ],
       ],
     );
 
     docChildren.push(
-      makeSectionHeading('Ringkasan Perbedaan Metodologi (rekapinJx vs Anates V4)'),
+      makeSectionHeading('Ringkasan Perbedaan Metode (rekapinJx vs Anates V4)'),
       compareTable,
       ...makeChapterBanner(
         'BAGIAN A — HASIL OLAH DATA VERSI rekapinJx',
-        'Menggunakan KR-20, 3 kategori kesukaran (P), pengecoh ≥ 5%, dan keputusan akhir butir.',
+        'Menggunakan KR-20, 3 kategori kesulitan (P), pengecoh ≥ 5%, dan keputusan akhir soal.',
         BRAND_PRIMARY,
       ),
       ...buildAbcRekapinjxBlocks({
@@ -1716,7 +1916,7 @@ export async function exportAbcWordReport(params: {
       new Paragraph({ children: [new PageBreak()] }),
       ...makeChapterBanner(
         'BAGIAN B — HASIL OLAH DATA VERSI ANATES V4',
-        'Menggunakan Belah Dua Ganjil–Genap (Spearman-Brown r11), TK 5 kategori (%), DP (%), uji signifikansi 5%/1%, dan kode pengecoh Anates V4.',
+        'Menggunakan perbandingan konsistensi soal ganjil–genap, Tingkat Kesulitan 5 kategori (%), Daya Pembeda (%), kelayakan soal (5%/1%), dan kode pengecoh Anates V4.',
         ANATES_PRIMARY,
       ),
       ...buildAbcAnatesBlocks({
@@ -1908,6 +2108,7 @@ export async function exportUraianWordReport(params: {
         }),
       ],
     }),
+    ...buildAbbreviationLegendBlocks('uraian'),
   ];
 
   if (reportVariant === 'rekapinjx') {
@@ -1943,12 +2144,12 @@ export async function exportUraianWordReport(params: {
       ],
       [
         [
-          { text: 'Metode Reliabilitas', bold: true },
-          { text: 'Alpha Cronbach (α)' },
-          { text: 'Belah Dua Ganjil–Genap (Spearman-Brown r11)' },
+          { text: 'Cara Ukur Konsistensi Tes', bold: true },
+          { text: 'Konsistensi variasi skor tiap butir (Alpha Cronbach)' },
+          { text: 'Perbandingan kecocokan butir ganjil & genap (Anates V4)' },
         ],
         [
-          { text: 'Nilai Koefisien Reliabilitas', bold: true },
+          { text: 'Nilai Konsistensi Tes', bold: true },
           {
             text: `${report.reliability.cronbachAlpha !== null ? report.reliability.cronbachAlpha.toFixed(3) : '—'} (${report.reliability.category})`,
             bold: true,
@@ -1961,28 +2162,28 @@ export async function exportUraianWordReport(params: {
           },
         ],
         [
-          { text: 'Signifikansi / Validitas Butir', bold: true },
+          { text: 'Kelayakan Tiap Butir', bold: true },
           {
-            text: `${report.summaryCounts.valid} Valid · ${report.summaryCounts.invalid} Tidak Valid (α = 5%)`,
+            text: `${report.summaryCounts.valid} Valid · ${report.summaryCounts.invalid} Tidak Valid (standar 5%)`,
           },
           {
-            text: `${anatesReport.summaryCounts.significant} Signifikan/Sangat Signifikan · ${anatesReport.summaryCounts.notSignificant} Tidak (α = 5% & 1%)`,
+            text: `${anatesReport.summaryCounts.significant} Layak (Signifikan) · ${anatesReport.summaryCounts.notSignificant} Perlu Ditinjau`,
           },
         ],
         [
-          { text: 'Rumus Tingkat Kesukaran (TK / P)', bold: true },
-          { text: '(Mean − Min) / (Maks − Min)' },
-          { text: '(Mean / Skor Maks) × 100% (5 kategori Anates V4)' },
+          { text: 'Cara Hitung Tingkat Kesulitan', bold: true },
+          { text: 'Dihitung dari rentang skor terendah ke tertinggi' },
+          { text: '(Rata-rata / Skor Maks) × 100% (5 kategori)' },
         ],
       ],
     );
 
     docChildren.push(
-      makeSectionHeading('Ringkasan Perbedaan Metodologi (rekapinJx vs Anates V4)'),
+      makeSectionHeading('Ringkasan Perbedaan Metode (rekapinJx vs Anates V4)'),
       compareTable,
       ...makeChapterBanner(
         'BAGIAN A — HASIL OLAH DATA VERSI rekapinJx',
-        'Menggunakan Alpha Cronbach, rentang skala dinormalisasi (Mean − Min)/(Maks − Min), dan keputusan akhir butir.',
+        'Menggunakan Alpha Cronbach, perhitungan rentang skala terendah–tertinggi, dan keputusan akhir butir.',
         BRAND_PRIMARY,
       ),
       ...buildUraianRekapinjxBlocks({
@@ -1997,7 +2198,7 @@ export async function exportUraianWordReport(params: {
       new Paragraph({ children: [new PageBreak()] }),
       ...makeChapterBanner(
         'BAGIAN B — HASIL OLAH DATA VERSI ANATES V4',
-        'Menggunakan Belah Dua Ganjil–Genap (Spearman-Brown r11), TK% = (Mean/Skor Maks)×100%, DP% = ((Unggul−Asor)/Skor Maks)×100%, dan signifikansi 5%/1%.',
+        'Menggunakan perbandingan konsistensi butir ganjil–genap, Tingkat Kesulitan = (Rata-rata / Skor Maks) × 100%, Daya Pembeda (%), dan status kelayakan butir (5%/1%).',
         ANATES_PRIMARY,
       ),
       ...buildUraianAnatesBlocks({

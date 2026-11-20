@@ -155,10 +155,29 @@ export function ExcelPreviewModal({
 
         {/* Spreadsheet Table Body */}
         <div className="flex-1 overflow-auto p-5 sm:p-6">
-          <div className="overflow-x-auto rounded-lg border border-[#D4DDD8] dark:border-[#28362F]">
+          {activeTab === 'groups' && (
+            <div className="mb-3 rounded-lg border border-[#BBD0E6] bg-[#EEF4FA] px-3.5 py-2 text-xs text-[#1E3A5F] dark:border-[#243B55] dark:bg-[#101D2D] dark:text-[#A9CCF0]">
+              Lembar <strong>Kel. Unggul &amp; Asor (27%)</strong> diformat
+              khusus di file `.xlsx` dengan blok Ringkasan 27% dan daftar
+              terpisah Kelompok Unggul, Asor, serta Tengah.
+            </div>
+          )}
+          <div
+            className={`overflow-x-auto rounded-lg border ${
+              activeTab === 'groups'
+                ? 'border-[#BBD0E6] dark:border-[#243B55]'
+                : 'border-[#D4DDD8] dark:border-[#28362F]'
+            }`}
+          >
             <table className="w-max min-w-full border-separate border-spacing-0 text-xs sm:text-sm">
               <thead>
-                <tr className="bg-[#EEF3F0] font-semibold text-[#2B3B35] dark:bg-[#121916] dark:text-[#C5D3CC]">
+                <tr
+                  className={
+                    activeTab === 'groups'
+                      ? 'bg-[#1E3A5F] font-semibold text-white dark:bg-[#162C46] dark:text-[#E2EEFC]'
+                      : 'bg-[#EEF3F0] font-semibold text-[#2B3B35] dark:bg-[#121916] dark:text-[#C5D3CC]'
+                  }
+                >
                   {activeSheet.headers.map((header, colIdx) => {
                     const isMainStickyNo = activeTab === 'main' && colIdx === 0;
                     const isMainStickyName =
@@ -218,6 +237,12 @@ export function ExcelPreviewModal({
                           colIdx >= 3 &&
                           colIdx < 3 + preview.questionCount &&
                           cell === '';
+                        const groupVal =
+                          activeTab === 'groups' && colIdx === row.length - 1
+                            ? String(cell)
+                            : '';
+                        const isUnggulCell = groupVal.includes('Unggul');
+                        const isAsorCell = groupVal.includes('Asor');
 
                         const stickyBg = isKeyRow
                           ? 'bg-[#EAF4EF] dark:bg-[#193026]'
@@ -235,11 +260,15 @@ export function ExcelPreviewModal({
                                   ? `sticky left-[46px] z-10 text-left font-medium ${stickyBg}`
                                   : isEmptyAnswer
                                     ? 'bg-[#FEF6DC] text-center text-[#8A670B] dark:bg-[#3A2F14] dark:text-[#EBCB7A]'
-                                    : typeof cell === 'number' ||
-                                        (activeTab === 'main' && colIdx >= 3) ||
-                                        (activeTab === 'summary' && colIdx >= 1)
-                                      ? 'font-mono-tabular text-center'
-                                      : 'text-left'
+                                    : isUnggulCell
+                                      ? 'bg-[#ECF8F2] font-semibold text-[#14533C] dark:bg-[#152E24] dark:text-[#75DFB5]'
+                                      : isAsorCell
+                                        ? 'bg-[#FEE4E2] font-semibold text-[#912018] dark:bg-[#3B1A19] dark:text-[#FECACA]'
+                                        : typeof cell === 'number' ||
+                                            (activeTab === 'main' && colIdx >= 3) ||
+                                            (activeTab === 'summary' && colIdx >= 1)
+                                          ? 'font-mono-tabular text-center'
+                                          : 'text-left'
                             }`}
                           >
                             {cell === '' ? '—' : cell}

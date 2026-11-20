@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   Download,
@@ -6,6 +6,7 @@ import {
   FileSpreadsheet,
   FileText,
   GitCompare,
+  RefreshCw,
   Save,
 } from 'lucide-react';
 import type { SurveySubMode, UraianStudentRow } from '../types/sheet';
@@ -17,6 +18,8 @@ import {
   type AnatesUraianSectionId,
   type AnalysisEngineMode,
 } from '../utils/anatesV4Analysis';
+import type { RankedStudent } from '../utils/itemAnalysis';
+import { formatScoreRange, splitUnggulAsorGroups } from '../utils/unggulAsorFormat';
 import {
   computeFullUraianAnalysis,
   exportUraianAllAnalysesExcel,
@@ -56,13 +59,21 @@ const ANATES_URAIAN_TABS: Array<{
   label: string;
 }> = [
   { id: 'rekap', label: 'Rekap Anates V4' },
-  { id: 'reliabilitas', label: 'Reliabilitas (Belah Dua)' },
+  { id: 'reliabilitas', label: 'Konsistensi Tes (Reliabilitas)' },
   { id: 'unggul-asor', label: 'Kel. Unggul & Asor' },
   { id: 'daya-pembeda', label: 'Daya Pembeda (%)' },
-  { id: 'tingkat-kesukaran', label: 'Tingkat Kesukaran (%)' },
-  { id: 'korelasi', label: 'Korelasi & Signifikansi' },
+  { id: 'tingkat-kesukaran', label: 'Tingkat Kesulitan (%)' },
+  { id: 'korelasi', label: 'Kelayakan Butir (Validitas)' },
   { id: 'distribusi', label: 'Sebaran Skor Butir' },
 ];
+
+function formatAnalysisTime(): string {
+  return new Date().toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
 
 export function UraianAnalysisSection({
   examTitle,
@@ -80,30 +91,61 @@ export function UraianAnalysisSection({
   const [anatesTab, setAnatesTab] = useState<AnatesUraianSectionId>('rekap');
   const [exportNotice, setExportNotice] = useState('');
   const [isExportingWord, setIsExportingWord] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(() => formatAnalysisTime());
+  const refreshTimerRef = useRef<number | null>(null);
 
-  const report = useMemo(
-    () =>
-      computeFullUraianAnalysis(
-        rows,
-        itemCount,
-        subMode,
-        scaleMin,
-        itemMaxScores,
-      ),
-    [rows, itemCount, subMode, scaleMin, itemMaxScores],
-  );
+  useEffect(() => {
+    setLastUpdatedAt(formatAnalysisTime());
+  }, [rows, itemCount, subMode, scaleMin, defaultMaxScore, itemMaxScores]);
 
-  const anatesReport = useMemo(
-    () =>
-      computeAnatesV4UraianReport(
-        rows,
-        itemCount,
-        subMode,
-        scaleMin,
-        itemMaxScores,
-      ),
-    [rows, itemCount, subMode, scaleMin, itemMaxScores],
-  );
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current !== null) {
+        window.clearTimeout(refreshTimerRef.current);
+      }
+    };
+  }, []);
+
+  function handleRefreshAnalysis() {
+    setRefreshTick((t) => t + 1);
+    setLastUpdatedAt(formatAnalysisTime());
+    setIsRefreshing(true);
+    setExportNotice(
+      'Data analisis rekapinJx & Anates V4 telah dihitung ulang sesuai data terbaru.',
+    );
+    if (refreshTimerRef.current !== null) {
+      window.clearTimeout(refreshTimerRef.current);
+    }
+    refreshTimerRef.current = window.setTimeout(() => {
+      setIsRefreshing(false);
+    }, 450);
+  }
+
+  const report = useMemo(() => {
+    void refreshTick;
+    return computeFullUraianAnalysis(
+      rows,
+      itemCount,
+      subMode,
+      scaleMin,
+      itemMaxScores,
+      defaultMaxScore,
+    );
+  }, [rows, itemCount, subMode, scaleMin, defaultMaxScore, itemMaxScores, refreshTick]);
+
+  const anatesReport = useMemo(() => {
+    void refreshTick;
+    return computeAnatesV4UraianReport(
+      rows,
+      itemCount,
+      subMode,
+      scaleMin,
+      itemMaxScores,
+      defaultMaxScore,
+    );
+  }, [rows, itemCount, subMode, scaleMin, defaultMaxScore, itemMaxScores, refreshTick]);
 
   const activeTabLabel =
     URAIAN_TABS.find((t) => t.id === activeTab)?.label ?? 'Rekap Analisis Butir';
@@ -210,28 +252,293 @@ export function UraianAnalysisSection({
     }
   }
 
+  function renderDistinguishedUnggulAsor(cfg: {
+    rankedStudents: RankedStudent[];
+    groupSize: number;
+    scoreHeader: string;
+    engineNote: string;
+  }) {
+    const breakdown = splitUnggulAsorGroups(cfg.rankedStudents);
+    const renderGroupRows = (
+      list: RankedStudent[],
+      badgeText: string,
+      badgeClass: string,
+    ) =>
+      list.map((st) => (
+        <tr
+          key={st.id}
+          className="bg-white hover:bg-[#F8FAFC] dark:bg-[#141D19] dark:hover:bg-[#1B2722]"
+        >
+          <td className="font-mono-tabular border-b border-[#E5EBF1] px-2.5 py-2 text-center font-semibold dark:border-[#24322B]">
+            {st.rank}
+          </td>
+          <td className="border-b border-[#E5EBF1] px-2.5 py-2 font-medium text-[#14211C] dark:border-[#24322B] dark:text-[#E6EEE9]">
+            {st.nama}
+          </td>
+          <td className="border-b border-[#E5EBF1] px-2.5 py-2 text-center text-[#52635C] dark:border-[#24322B] dark:text-[#9AAAA2]">
+            {st.kelas}
+          </td>
+          <td className="font-mono-tabular border-b border-[#E5EBF1] px-2.5 py-2 text-right font-semibold dark:border-[#24322B]">
+            {st.score}/{st.maxScore}
+          </td>
+          <td className="font-mono-tabular border-b border-[#E5EBF1] px-2.5 py-2 text-right dark:border-[#24322B]">
+            {st.scorePercent.toFixed(1)}%
+          </td>
+          <td className="border-b border-[#E5EBF1] px-2.5 py-2 text-center dark:border-[#24322B]">
+            <span
+              className={`inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold ${badgeClass}`}
+            >
+              {badgeText}
+            </span>
+          </td>
+        </tr>
+      ));
+
+    return (
+      <div className="flex flex-col gap-4 rounded-xl border-2 border-[#B8CCE0] bg-[#F4F8FC] p-4 dark:border-[#2C4766] dark:bg-[#101D2D]">
+        {/* Distinguished Royal Navy Header Banner */}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#1E3A5F] px-4 py-3 text-white dark:bg-[#162C46]">
+          <div>
+            <h3 className="text-sm font-bold">
+              Analisis Khusus Kelompok Unggul &amp; Asor (Metode 27%) ·{' '}
+              {cfg.engineNote}
+            </h3>
+            <p className="text-xs text-[#D6E4F3]">
+              Dipisahkan dari tabel analisis butir agar pengelompokan 27% atas
+              (Unggul) dan 27% bawah (Asor) terlihat jelas.
+            </p>
+          </div>
+          <span className="font-mono-tabular rounded-lg bg-white/15 px-3 py-1.5 text-xs font-bold whitespace-nowrap">
+            n = {cfg.groupSize} peserta/kelompok · Total N = {breakdown.total}
+          </span>
+        </div>
+
+        {/* 3 Summary Cards */}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-[#BFE0D2] bg-[#ECF8F2] p-3.5 dark:border-[#244A3B] dark:bg-[#132920]">
+            <div className="text-xs font-bold text-[#14533C] dark:text-[#75DFB5]">
+              Kelompok Unggul (27% Atas)
+            </div>
+            <div className="font-mono-tabular mt-1 text-lg font-bold text-[#14211C] dark:text-[#E6EEE9]">
+              {breakdown.upperSummary.count} peserta (
+              {breakdown.upperSummary.percentOfTotal}%)
+            </div>
+            <div className="font-mono-tabular mt-0.5 text-xs text-[#394A43] dark:text-[#A9C4B8]">
+              Rentang skor: {formatScoreRange(breakdown.upperSummary)}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[#CBD5E1] bg-white p-3.5 dark:border-[#334155] dark:bg-[#16212C]">
+            <div className="text-xs font-bold text-[#475467] dark:text-[#CBD5E1]">
+              Kelompok Tengah (Netral)
+            </div>
+            <div className="font-mono-tabular mt-1 text-lg font-bold text-[#14211C] dark:text-[#E6EEE9]">
+              {breakdown.middleSummary.count} peserta (
+              {breakdown.middleSummary.percentOfTotal}%)
+            </div>
+            <div className="font-mono-tabular mt-0.5 text-xs text-[#475467] dark:text-[#94A3B8]">
+              Rentang skor: {formatScoreRange(breakdown.middleSummary)}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[#F5C2C0] bg-[#FEF2F2] p-3.5 dark:border-[#5C2422] dark:bg-[#2A1414]">
+            <div className="text-xs font-bold text-[#912018] dark:text-[#FDA29B]">
+              Kelompok Asor (27% Bawah)
+            </div>
+            <div className="font-mono-tabular mt-1 text-lg font-bold text-[#14211C] dark:text-[#E6EEE9]">
+              {breakdown.lowerSummary.count} peserta (
+              {breakdown.lowerSummary.percentOfTotal}%)
+            </div>
+            <div className="font-mono-tabular mt-0.5 text-xs text-[#7A271A] dark:text-[#FECACA]">
+              Rentang skor: {formatScoreRange(breakdown.lowerSummary)}
+            </div>
+          </div>
+        </div>
+
+        {/* Separated Side-by-Side Unggul & Asor Panels */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Panel A: Unggul */}
+          <div className="overflow-hidden rounded-lg border border-[#BFE0D2] bg-white dark:border-[#244A3B] dark:bg-[#141D19]">
+            <div className="flex items-center justify-between bg-[#1B6B4F] px-3.5 py-2.5 text-white dark:bg-[#15523C]">
+              <span className="text-xs font-bold sm:text-sm">
+                [A] Kelompok Unggul (27% Atas)
+              </span>
+              <span className="font-mono-tabular text-xs font-semibold">
+                {breakdown.upper.length} peserta
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-separate border-spacing-0 text-xs">
+                <thead>
+                  <tr className="bg-[#EAF4EF] font-semibold text-[#14533C] dark:bg-[#132920] dark:text-[#75DFB5]">
+                    <th className="border-b border-[#CFE5DA] px-2.5 py-2 text-center dark:border-[#244A3B]">
+                      Rank
+                    </th>
+                    <th className="border-b border-[#CFE5DA] px-2.5 py-2 text-left dark:border-[#244A3B]">
+                      Nama Peserta
+                    </th>
+                    <th className="border-b border-[#CFE5DA] px-2.5 py-2 text-center dark:border-[#244A3B]">
+                      Kelas
+                    </th>
+                    <th className="border-b border-[#CFE5DA] px-2.5 py-2 text-right dark:border-[#244A3B]">
+                      {cfg.scoreHeader}
+                    </th>
+                    <th className="border-b border-[#CFE5DA] px-2.5 py-2 text-right dark:border-[#244A3B]">
+                      Capaian (%)
+                    </th>
+                    <th className="border-b border-[#CFE5DA] px-2.5 py-2 text-center dark:border-[#244A3B]">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {renderGroupRows(
+                    breakdown.upper,
+                    'Unggul',
+                    'bg-[#ECF8F2] text-[#14533C] dark:bg-[#193529] dark:text-[#75DFB5]',
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Panel B: Asor */}
+          <div className="overflow-hidden rounded-lg border border-[#F5C2C0] bg-white dark:border-[#5C2422] dark:bg-[#141D19]">
+            <div className="flex items-center justify-between bg-[#912018] px-3.5 py-2.5 text-white dark:bg-[#7A1C16]">
+              <span className="text-xs font-bold sm:text-sm">
+                [B] Kelompok Asor (27% Bawah)
+              </span>
+              <span className="font-mono-tabular text-xs font-semibold">
+                {breakdown.lower.length} peserta
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-separate border-spacing-0 text-xs">
+                <thead>
+                  <tr className="bg-[#FEF2F2] font-semibold text-[#912018] dark:bg-[#2A1414] dark:text-[#FDA29B]">
+                    <th className="border-b border-[#F5D0CE] px-2.5 py-2 text-center dark:border-[#5C2422]">
+                      Rank
+                    </th>
+                    <th className="border-b border-[#F5D0CE] px-2.5 py-2 text-left dark:border-[#5C2422]">
+                      Nama Peserta
+                    </th>
+                    <th className="border-b border-[#F5D0CE] px-2.5 py-2 text-center dark:border-[#5C2422]">
+                      Kelas
+                    </th>
+                    <th className="border-b border-[#F5D0CE] px-2.5 py-2 text-right dark:border-[#5C2422]">
+                      {cfg.scoreHeader}
+                    </th>
+                    <th className="border-b border-[#F5D0CE] px-2.5 py-2 text-right dark:border-[#5C2422]">
+                      Capaian (%)
+                    </th>
+                    <th className="border-b border-[#F5D0CE] px-2.5 py-2 text-center dark:border-[#5C2422]">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {renderGroupRows(
+                    breakdown.lower,
+                    'Asor',
+                    'bg-[#FEE4E2] text-[#912018] dark:bg-[#4A1C1A] dark:text-[#FECACA]',
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Panel C: Kelompok Tengah */}
+        {breakdown.middle.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-[#CBD5E1] bg-white dark:border-[#334155] dark:bg-[#141D19]">
+            <div className="flex items-center justify-between bg-[#475467] px-3.5 py-2 text-white dark:bg-[#334155]">
+              <span className="text-xs font-bold">
+                [C] Kelompok Tengah (Tidak Masuk Hitungan DP 27%)
+              </span>
+              <span className="font-mono-tabular text-xs font-semibold">
+                {breakdown.middle.length} peserta
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-separate border-spacing-0 text-xs">
+                <thead>
+                  <tr className="bg-[#F8FAFC] font-semibold text-[#475467] dark:bg-[#1E293B] dark:text-[#CBD5E1]">
+                    <th className="border-b border-[#E2E8F0] px-2.5 py-2 text-center dark:border-[#334155]">
+                      Rank
+                    </th>
+                    <th className="border-b border-[#E2E8F0] px-2.5 py-2 text-left dark:border-[#334155]">
+                      Nama Peserta
+                    </th>
+                    <th className="border-b border-[#E2E8F0] px-2.5 py-2 text-center dark:border-[#334155]">
+                      Kelas
+                    </th>
+                    <th className="border-b border-[#E2E8F0] px-2.5 py-2 text-right dark:border-[#334155]">
+                      {cfg.scoreHeader}
+                    </th>
+                    <th className="border-b border-[#E2E8F0] px-2.5 py-2 text-right dark:border-[#334155]">
+                      Capaian (%)
+                    </th>
+                    <th className="border-b border-[#E2E8F0] px-2.5 py-2 text-center dark:border-[#334155]">
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {renderGroupRows(
+                    breakdown.middle,
+                    'Tengah',
+                    'bg-[#F1F5F9] text-[#475467] dark:bg-[#273449] dark:text-[#CBD5E1]',
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <section
       id="uraian-analisis"
       aria-labelledby="heading-uraian-analisis"
       className="flex flex-col gap-5 rounded-xl border border-[#D4DDD8] bg-white p-5 sm:p-6 dark:border-[#28362F] dark:bg-[#161F1B]"
     >
-      <div className="flex items-center gap-3">
-        <span className="inline-grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#1B6B4F] text-sm font-bold text-white dark:bg-[#4AC294] dark:text-[#0B1712]">
-          5
-        </span>
-        <div>
-          <h2
-            id="heading-uraian-analisis"
-            className="text-base font-bold text-[#14211C] dark:text-[#E6EEE9]"
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="inline-grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#1B6B4F] text-sm font-bold text-white dark:bg-[#4AC294] dark:text-[#0B1712]">
+            5
+          </span>
+          <div>
+            <h2
+              id="heading-uraian-analisis"
+              className="text-base font-bold text-[#14211C] dark:text-[#E6EEE9]"
+            >
+              Olah data &amp; analisis butir angket / uraian
+            </h2>
+            <p className="text-xs text-[#52635C] dark:text-[#9AAAA2]">
+              Otomatis mengikuti perubahan data &amp; bobot. Pilih sumber hasil:
+              standar <strong>rekapinJx</strong>, standar{' '}
+              <strong>Anates V4</strong>, atau perbandingan keduanya.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-mono-tabular rounded-lg border border-[#DCE5E0] bg-[#F8FAF9] px-2.5 py-1.5 text-[11px] font-medium text-[#52635C] dark:border-[#28362F] dark:bg-[#111915] dark:text-[#9AAAA2]">
+            Sinkron otomatis · {lastUpdatedAt}
+          </span>
+          <button
+            type="button"
+            onClick={handleRefreshAnalysis}
+            className="btn-gesture btn-surface-secondary inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
           >
-            Olah data &amp; analisis butir angket / uraian
-          </h2>
-          <p className="text-xs text-[#52635C] dark:text-[#9AAAA2]">
-            Pilih sumber hasil secara terpisah: standar{' '}
-            <strong>rekapinJx (Alpha Cronbach)</strong>, standar{' '}
-            <strong>Anates V4 (Belah Dua)</strong>, atau perbandingan keduanya.
-          </p>
+            <RefreshCw
+              className={`h-3.5 w-3.5 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`}
+              aria-hidden="true"
+            />
+            <span>Refresh Analisis</span>
+          </button>
         </div>
       </div>
 
@@ -272,7 +579,7 @@ export function UraianAnalysisSection({
                 : 'text-[#394A43] hover:bg-white dark:text-[#C5D3CC] dark:hover:bg-[#1D2923]'
             }`}
           >
-            Hasil Anates V4 (Belah Dua)
+            Hasil Anates V4
           </button>
           <button
             type="button"
@@ -295,7 +602,7 @@ export function UraianAnalysisSection({
 
         <span className="px-2 text-xs font-medium text-[#52635C] dark:text-[#9AAAA2]">
           {engineMode === 'rekapinjx'
-            ? 'Aktif: Standar Psikometri rekapinJx'
+            ? 'Aktif: Standar Analisis rekapinJx'
             : engineMode === 'anatesv4'
               ? 'Aktif: Standar Asli Anates V4'
               : 'Aktif: Perbandingan Terpisah'}
@@ -391,25 +698,33 @@ export function UraianAnalysisSection({
             aria-label="Menu olah data angket dan uraian rekapinJx"
             className="flex flex-wrap items-center gap-1.5 rounded-xl bg-[#EFF3F1] p-1.5 dark:bg-[#111915]"
           >
-            {URAIAN_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  setExportNotice('');
-                }}
-                className={`btn-gesture cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap sm:text-sm ${
-                  activeTab === tab.id
-                    ? 'btn-surface-primary'
-                    : 'text-[#52635C] hover:bg-white/70 hover:text-[#14211C] dark:text-[#9AAAA2] dark:hover:bg-[#1D2923] dark:hover:text-[#E6EEE9]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {URAIAN_TABS.map((tab) => {
+              const isUnggulTab = tab.id === 'unggul-asor';
+              const isSelected = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setExportNotice('');
+                  }}
+                  className={`btn-gesture cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap sm:text-sm ${
+                    isSelected
+                      ? isUnggulTab
+                        ? 'bg-[#1E3A5F] text-white shadow-xs dark:bg-[#2F639D] dark:text-white'
+                        : 'btn-surface-primary'
+                      : isUnggulTab
+                        ? 'border border-[#B8CCE0] bg-[#EEF4FA] text-[#1E3A5F] hover:bg-[#E1ECF7] dark:border-[#2C4766] dark:bg-[#132233] dark:text-[#93C5FD] dark:hover:bg-[#1B314A]'
+                        : 'text-[#52635C] hover:bg-white/70 hover:text-[#14211C] dark:text-[#9AAAA2] dark:hover:bg-[#1D2923] dark:hover:text-[#E6EEE9]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
 
           {/* Per-analysis & full-workbook export toolbar */}
@@ -664,74 +979,14 @@ export function UraianAnalysisSection({
             </div>
           )}
 
-          {/* Tab 3: Kelompok Unggul & Asor */}
-          {activeTab === 'unggul-asor' && (
-            <div className="overflow-x-auto rounded-lg border border-[#D4DDD8] dark:border-[#28362F]">
-              <table className="w-full border-separate border-spacing-0 text-xs sm:text-sm">
-                <thead>
-                  <tr className="bg-[#F4F7F5] text-xs font-semibold text-[#52635C] dark:bg-[#121916] dark:text-[#9AAAA2]">
-                    <th className="border-b border-[#D4DDD8] px-3 py-2.5 text-center dark:border-[#28362F]">
-                      Peringkat
-                    </th>
-                    <th className="border-b border-[#D4DDD8] px-3 py-2.5 text-left dark:border-[#28362F]">
-                      Nama
-                    </th>
-                    <th className="border-b border-[#D4DDD8] px-3 py-2.5 text-center dark:border-[#28362F]">
-                      Kelas
-                    </th>
-                    <th className="border-b border-[#D4DDD8] px-3 py-2.5 text-right dark:border-[#28362F]">
-                      Total Skor
-                    </th>
-                    <th className="border-b border-[#D4DDD8] px-3 py-2.5 text-right dark:border-[#28362F]">
-                      Capaian (%)
-                    </th>
-                    <th className="border-b border-[#D4DDD8] px-3 py-2.5 text-left dark:border-[#28362F]">
-                      Kelompok (27%)
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.rankedStudents.map((st) => (
-                    <tr
-                      key={st.id}
-                      className="bg-white hover:bg-[#F8FAF9] dark:bg-[#161F1B] dark:hover:bg-[#1B2621]"
-                    >
-                      <td className="font-mono-tabular border-b border-[#E3EAE6] px-3 py-2 text-center font-semibold dark:border-[#24322B]">
-                        {st.rank}
-                      </td>
-                      <td className="border-b border-[#E3EAE6] px-3 py-2 font-medium dark:border-[#24322B]">
-                        {st.nama}
-                      </td>
-                      <td className="border-b border-[#E3EAE6] px-3 py-2 text-center text-[#52635C] dark:border-[#24322B] dark:text-[#9AAAA2]">
-                        {st.kelas}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#E3EAE6] px-3 py-2 text-right font-semibold dark:border-[#24322B]">
-                        {st.score}/{st.maxScore}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#E3EAE6] px-3 py-2 text-right dark:border-[#24322B]">
-                        {st.scorePercent}%
-                      </td>
-                      <td
-                        className={`border-b border-[#E3EAE6] px-3 py-2 font-semibold dark:border-[#24322B] ${
-                          st.group === 'Unggul'
-                            ? 'bg-[#ECF8F2] text-[#14533C] dark:bg-[#193529] dark:text-[#75DFB5]'
-                            : st.group === 'Asor'
-                              ? 'bg-[#FEE4E2] text-[#912018] dark:bg-[#4A1C1A] dark:text-[#FECACA]'
-                              : 'text-[#52635C] dark:text-[#9AAAA2]'
-                        }`}
-                      >
-                        {st.group === 'Unggul'
-                          ? 'Kelompok Unggul (27% Atas)'
-                          : st.group === 'Asor'
-                            ? 'Kelompok Asor (27% Bawah)'
-                            : 'Kelompok Tengah'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {/* Tab 3: Kelompok Unggul & Asor — Format Khusus Terpisah */}
+          {activeTab === 'unggul-asor' &&
+            renderDistinguishedUnggulAsor({
+              rankedStudents: report.rankedStudents,
+              groupSize: report.groupSize,
+              scoreHeader: 'Total Skor',
+              engineNote: 'Versi rekapinJx',
+            })}
 
           {/* Tab 4: Daya Pembeda */}
           {activeTab === 'daya-pembeda' && (
@@ -979,20 +1234,19 @@ export function UraianAnalysisSection({
         /* ============================================================== */
         <div className="flex flex-col gap-5">
           <div className="rounded-lg border border-[#E5CFB6] bg-[#FDF8F2] px-4 py-3 text-xs text-[#6B3F15] dark:border-[#4A321C] dark:bg-[#23170D] dark:text-[#EED0AE]">
-            <strong>Standar Asli Anates V4 (Uraian):</strong> Reliabilitas{' '}
-            <em>Belah Dua Ganjil–Genap (Spearman-Brown r₁₁)</em>, TK% ={' '}
-            <span className="font-mono-tabular">(Mean / Skor Maks) × 100%</span>{' '}
-            (5 kategori), DP% ={' '}
-            <span className="font-mono-tabular">
-              ((Mean_Unggul − Mean_Asor) / Skor Maks) × 100%
-            </span>
-            , dan uji signifikansi <strong>5% &amp; 1%</strong>.
+            <strong>Standar Anates V4 (Uraian):</strong> Mengukur{' '}
+            <strong>Konsistensi Tes</strong> dari keterkaitan skor butir ganjil
+            &amp; genap, <strong>Tingkat Kesulitan (%)</strong> = (Rata-rata /
+            Skor Maks) × 100% (5 kategori), <strong>Daya Pembeda (%)</strong> =
+            ((Rata-rata Unggul − Rata-rata Asor) / Skor Maks) × 100%, serta
+            kelayakan tiap butir pada batas standar{' '}
+            <strong>5% &amp; 1%</strong>.
           </div>
 
           <div className="grid grid-cols-2 divide-y divide-[#EADFD3] rounded-lg border border-[#E5CFB6] bg-[#FDF8F2] sm:grid-cols-4 sm:divide-x sm:divide-y-0 dark:divide-[#3E2A17] dark:border-[#4A321C] dark:bg-[#1E140B]">
             <div className="flex flex-col gap-1 p-4">
               <span className="text-xs font-medium text-[#7C532B] dark:text-[#C9A47C]">
-                Reliabilitas Belah Dua (r₁₁)
+                Konsistensi Tes (Reliabilitas)
               </span>
               <span className="font-mono-tabular text-xl font-bold text-[#3D220A] dark:text-[#F6E4CE]">
                 {anatesReport.reliability.spearmanBrownR !== null
@@ -1000,11 +1254,10 @@ export function UraianAnalysisSection({
                   : '—'}
               </span>
               <span className="text-xs font-semibold text-[#8A511D] dark:text-[#E5B076]">
-                {anatesReport.reliability.category} (XY:{' '}
+                {anatesReport.reliability.category} · Kecocokan ganjil-genap:{' '}
                 {anatesReport.reliability.splitHalfR !== null
                   ? anatesReport.reliability.splitHalfR.toFixed(3)
                   : '—'}
-                )
               </span>
             </div>
 
@@ -1016,35 +1269,36 @@ export function UraianAnalysisSection({
                 {anatesReport.groupSize} &amp; {anatesReport.groupSize} peserta
               </span>
               <span className="font-mono-tabular text-xs text-[#7C532B] dark:text-[#C9A47C]">
-                N = {anatesReport.reliability.studentCount} · k ={' '}
+                Total N = {anatesReport.reliability.studentCount} ·{' '}
                 {anatesReport.reliability.itemCount} butir
               </span>
             </div>
 
             <div className="flex flex-col gap-1 p-4">
               <span className="text-xs font-medium text-[#7C532B] dark:text-[#C9A47C]">
-                Signifikansi (r₅%:{' '}
-                {anatesReport.reliability.rTable5?.toFixed(3) ?? '—'} · r₁%:{' '}
+                Kelayakan Butir (Batas{' '}
+                {anatesReport.reliability.rTable5?.toFixed(3) ?? '—'} /{' '}
                 {anatesReport.reliability.rTable1?.toFixed(3) ?? '—'})
               </span>
               <span className="font-mono-tabular text-xl font-bold text-[#3D220A] dark:text-[#F6E4CE]">
                 {anatesReport.summaryCounts.significant} /{' '}
-                {anatesReport.items.length} signif.
+                {anatesReport.items.length} layak
               </span>
               <span className="font-mono-tabular text-xs text-[#7C532B] dark:text-[#C9A47C]">
-                {anatesReport.summaryCounts.notSignificant} tidak signifikan
+                {anatesReport.summaryCounts.notSignificant} perlu ditinjau ulang
               </span>
             </div>
 
             <div className="flex flex-col gap-1 p-4">
               <span className="text-xs font-medium text-[#7C532B] dark:text-[#C9A47C]">
-                Rata-rata &amp; Simpangan Baku
+                Rata-rata &amp; Sebaran Nilai
               </span>
               <span className="font-mono-tabular text-xl font-bold text-[#3D220A] dark:text-[#F6E4CE]">
                 {anatesReport.reliability.meanScore.toFixed(2)}
               </span>
               <span className="font-mono-tabular text-xs text-[#7C532B] dark:text-[#C9A47C]">
-                SD = {anatesReport.reliability.stdDev.toFixed(2)}
+                Keragaman nilai (SD) ={' '}
+                {anatesReport.reliability.stdDev.toFixed(2)}
               </span>
             </div>
           </div>
@@ -1055,25 +1309,33 @@ export function UraianAnalysisSection({
             aria-label="Menu hasil Anates V4 angket dan uraian"
             className="flex flex-wrap items-center gap-1.5 rounded-xl bg-[#F5EFE8] p-1.5 dark:bg-[#1B130B]"
           >
-            {ANATES_URAIAN_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={anatesTab === tab.id}
-                onClick={() => {
-                  setAnatesTab(tab.id);
-                  setExportNotice('');
-                }}
-                className={`btn-gesture cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap sm:text-sm ${
-                  anatesTab === tab.id
-                    ? 'bg-[#8A511D] text-white shadow-xs dark:bg-[#E5B076] dark:text-[#231407]'
-                    : 'text-[#6B4A2B] hover:bg-white/80 hover:text-[#3D220A] dark:text-[#C9A47C] dark:hover:bg-[#2A1D12] dark:hover:text-[#F6E4CE]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {ANATES_URAIAN_TABS.map((tab) => {
+              const isUnggulTab = tab.id === 'unggul-asor';
+              const isSelected = anatesTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  onClick={() => {
+                    setAnatesTab(tab.id);
+                    setExportNotice('');
+                  }}
+                  className={`btn-gesture cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold whitespace-nowrap sm:text-sm ${
+                    isSelected
+                      ? isUnggulTab
+                        ? 'bg-[#1E3A5F] text-white shadow-xs dark:bg-[#2F639D] dark:text-white'
+                        : 'bg-[#8A511D] text-white shadow-xs dark:bg-[#E5B076] dark:text-[#231407]'
+                      : isUnggulTab
+                        ? 'border border-[#B8CCE0] bg-[#EEF4FA] text-[#1E3A5F] hover:bg-[#E1ECF7] dark:border-[#2C4766] dark:bg-[#132233] dark:text-[#93C5FD] dark:hover:bg-[#1B314A]'
+                        : 'text-[#6B4A2B] hover:bg-white/80 hover:text-[#3D220A] dark:text-[#C9A47C] dark:hover:bg-[#2A1D12] dark:hover:text-[#F6E4CE]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
 
           {/* Anates Export Toolbar */}
@@ -1137,83 +1399,88 @@ export function UraianAnalysisSection({
 
           {/* Anates Tab 1: Rekap */}
           {anatesTab === 'rekap' && (
-            <div className="overflow-x-auto rounded-lg border border-[#E5CFB6] dark:border-[#4A321C]">
-              <table className="w-max min-w-full border-separate border-spacing-0 text-xs sm:text-sm">
-                <thead>
-                  <tr className="bg-[#F9F2EA] text-xs font-semibold text-[#6B4A2B] dark:bg-[#23170D] dark:text-[#D8B68F]">
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-center dark:border-[#4A321C]">
-                      No Butir
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      Skor Maks
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      Rata-rata
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      DP (%)
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      TK (%)
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-left dark:border-[#4A321C]">
-                      Tafsiran TK (Anates V4)
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      Korelasi (r)
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-left dark:border-[#4A321C]">
-                      Signifikansi
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {anatesReport.items.map((it) => (
-                    <tr
-                      key={it.itemNumber}
-                      className="bg-white hover:bg-[#FDF8F2] dark:bg-[#161F1B] dark:hover:bg-[#23170D]"
-                    >
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-center font-semibold dark:border-[#3A2717]">
-                        {it.itemNumber}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
-                        {it.maxScore}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
-                        {it.meanScore.toFixed(2)}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
-                        {it.discriminationPercent.toFixed(2)}%
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
-                        {it.difficultyPercent.toFixed(2)}%
-                      </td>
-                      <td className="border-b border-[#EFE3D6] px-3 py-2 dark:border-[#3A2717]">
-                        {it.difficultyCategory}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
-                        {it.correlationR !== null
-                          ? it.correlationR.toFixed(3)
-                          : '—'}
-                      </td>
-                      <td
-                        className={`border-b border-[#EFE3D6] px-3 py-2 font-semibold dark:border-[#3A2717] ${
-                          it.significance === 'Sangat Signifikan' ||
-                          it.significance === 'Signifikan'
-                            ? 'text-[#1B6B4F] dark:text-[#58C49B]'
-                            : 'text-[#B42318] dark:text-[#FDA29B]'
-                        }`}
-                      >
-                        {it.significance}
-                      </td>
+            <div className="flex flex-col gap-2.5">
+              <div className="overflow-x-auto rounded-lg border border-[#E5CFB6] dark:border-[#4A321C]">
+                <table className="w-max min-w-full border-separate border-spacing-0 text-xs sm:text-sm">
+                  <thead>
+                    <tr className="bg-[#F9F2EA] text-xs font-semibold text-[#6B4A2B] dark:bg-[#23170D] dark:text-[#D8B68F]">
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-center dark:border-[#4A321C]">
+                        No Butir
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
+                        Skor Maks
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
+                        Rata-rata
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
+                        Daya Pembeda (%)
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
+                        Tingkat Kesulitan (%)
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-left dark:border-[#4A321C]">
+                        Kategori Kesulitan
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
+                        Skor Kesesuaian (r)
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-left dark:border-[#4A321C]">
+                        Status Kelayakan
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {anatesReport.items.map((it) => (
+                      <tr
+                        key={it.itemNumber}
+                        className="bg-white hover:bg-[#FDF8F2] dark:bg-[#161F1B] dark:hover:bg-[#23170D]"
+                      >
+                        <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-center font-semibold dark:border-[#3A2717]">
+                          {it.itemNumber}
+                        </td>
+                        <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
+                          {it.maxScore}
+                        </td>
+                        <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
+                          {it.meanScore.toFixed(2)}
+                        </td>
+                        <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
+                          {it.discriminationPercent.toFixed(2)}%
+                        </td>
+                        <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
+                          {it.difficultyPercent.toFixed(2)}%
+                        </td>
+                        <td className="border-b border-[#EFE3D6] px-3 py-2 dark:border-[#3A2717]">
+                          {it.difficultyCategory}
+                        </td>
+                        <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
+                          {it.correlationR !== null
+                            ? it.correlationR.toFixed(3)
+                            : '—'}
+                        </td>
+                        <td
+                          className={`border-b border-[#EFE3D6] px-3 py-2 font-semibold dark:border-[#3A2717] ${
+                            it.significance === 'Sangat Signifikan' ||
+                            it.significance === 'Signifikan'
+                              ? 'text-[#1B6B4F] dark:text-[#58C49B]'
+                              : 'text-[#B42318] dark:text-[#FDA29B]'
+                          }`}
+                        >
+                          {it.significance}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-[#52635C] dark:text-[#9AAAA2]">
+                <strong>Status Kelayakan:</strong> <em>Sangat Signifikan / Signifikan</em> berarti butir layak dan cocok mengukur kemampuan peserta; <em>Tidak Signifikan</em> berarti butir sebaiknya diperbaiki atau ditinjau ulang.
+              </p>
             </div>
           )}
 
-          {/* Anates Tab 2: Reliabilitas */}
+          {/* Anates Tab 2: Konsistensi Tes */}
           {anatesTab === 'reliabilitas' && (
             <div className="flex flex-col gap-3">
               <div className="overflow-hidden rounded-lg border border-[#E5CFB6] dark:border-[#4A321C]">
@@ -1221,7 +1488,7 @@ export function UraianAnalysisSection({
                   <thead>
                     <tr className="bg-[#F9F2EA] text-xs font-semibold text-[#6B4A2B] dark:bg-[#23170D] dark:text-[#D8B68F]">
                       <th className="border-b border-[#E5CFB6] px-4 py-2.5 text-left dark:border-[#4A321C]">
-                        Parameter Pengujian Reliabilitas (Anates V4)
+                        Parameter Pengujian Konsistensi Tes (Anates V4)
                       </th>
                       <th className="border-b border-[#E5CFB6] px-4 py-2.5 text-right dark:border-[#4A321C]">
                         Hasil Perhitungan
@@ -1231,7 +1498,7 @@ export function UraianAnalysisSection({
                   <tbody className="divide-y divide-[#EFE3D6] dark:divide-[#3A2717]">
                     <tr>
                       <td className="px-4 py-2.5 text-[#52635C] dark:text-[#9AAAA2]">
-                        Jumlah Subjek / Responden (N)
+                        Jumlah Peserta / Responden (N)
                       </td>
                       <td className="font-mono-tabular px-4 py-2.5 text-right font-semibold">
                         {anatesReport.reliability.studentCount}
@@ -1255,7 +1522,7 @@ export function UraianAnalysisSection({
                     </tr>
                     <tr>
                       <td className="px-4 py-2.5 text-[#52635C] dark:text-[#9AAAA2]">
-                        Simpangan Baku (SD)
+                        Keragaman Nilai (Simpangan Baku / SD)
                       </td>
                       <td className="font-mono-tabular px-4 py-2.5 text-right font-semibold">
                         {anatesReport.reliability.stdDev.toFixed(2)}
@@ -1263,7 +1530,7 @@ export function UraianAnalysisSection({
                     </tr>
                     <tr>
                       <td className="px-4 py-2.5 text-[#52635C] dark:text-[#9AAAA2]">
-                        Korelasi XY (Belah Dua Ganjil–Genap)
+                        Kecocokan Butir Ganjil &amp; Genap (XY)
                       </td>
                       <td className="font-mono-tabular px-4 py-2.5 text-right font-semibold">
                         {anatesReport.reliability.splitHalfR !== null
@@ -1273,7 +1540,7 @@ export function UraianAnalysisSection({
                     </tr>
                     <tr className="bg-[#FDF3E7] dark:bg-[#2E1E10]">
                       <td className="px-4 py-3 font-bold text-[#8A511D] dark:text-[#F6E4CE]">
-                        Reliabilitas Instrumen (Spearman-Brown r₁₁)
+                        Nilai Konsistensi Instrumen Keseluruhan
                       </td>
                       <td className="font-mono-tabular px-4 py-3 text-right text-base font-bold text-[#8A511D] dark:text-[#F6E4CE]">
                         {anatesReport.reliability.spearmanBrownR !== null
@@ -1283,7 +1550,7 @@ export function UraianAnalysisSection({
                     </tr>
                     <tr>
                       <td className="px-4 py-2.5 text-[#52635C] dark:text-[#9AAAA2]">
-                        Interpretasi Reliabilitas
+                        Kesimpulan Konsistensi Tes
                       </td>
                       <td className="px-4 py-2.5 text-right font-bold text-[#8A511D] dark:text-[#E5B076]">
                         {anatesReport.reliability.category}
@@ -1291,7 +1558,7 @@ export function UraianAnalysisSection({
                     </tr>
                     <tr>
                       <td className="px-4 py-2.5 text-[#52635C] dark:text-[#9AAAA2]">
-                        r Tabel (α = 5% / α = 1%)
+                        Batas Minimal Valid (Standar 5% / Standar 1%)
                       </td>
                       <td className="font-mono-tabular px-4 py-2.5 text-right font-semibold">
                         {anatesReport.reliability.rTable5?.toFixed(3) ?? '—'} /{' '}
@@ -1302,81 +1569,19 @@ export function UraianAnalysisSection({
                 </table>
               </div>
               <p className="text-xs text-[#52635C] dark:text-[#9AAAA2]">
-                Anates V4 selalu memakai metode Belah Dua Ganjil–Genap dengan
-                koreksi Spearman-Brown r₁₁ = (2 × r_XY)/(1 + r_XY), sedangkan
-                rekapinJx memakai Alpha Cronbach untuk data politomi/uraian.
+                Anates V4 mengukur konsistensi instrumen dengan membandingkan keterkaitan skor butir ganjil dan genap lalu menyesuaikannya untuk keseluruhan tes, sedangkan rekapinJx menghitung konsistensi langsung dari variasi skor tiap butir.
               </p>
             </div>
           )}
 
-          {/* Anates Tab 3: Unggul Asor */}
-          {anatesTab === 'unggul-asor' && (
-            <div className="overflow-x-auto rounded-lg border border-[#E5CFB6] dark:border-[#4A321C]">
-              <table className="w-full border-separate border-spacing-0 text-xs sm:text-sm">
-                <thead>
-                  <tr className="bg-[#F9F2EA] text-xs font-semibold text-[#6B4A2B] dark:bg-[#23170D] dark:text-[#D8B68F]">
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-center dark:border-[#4A321C]">
-                      Peringkat
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-left dark:border-[#4A321C]">
-                      Nama
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-center dark:border-[#4A321C]">
-                      Kelas
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      Total Skor
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      Capaian (%)
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-left dark:border-[#4A321C]">
-                      Kelompok (27%)
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {anatesReport.rankedStudents.map((st) => (
-                    <tr
-                      key={st.id}
-                      className="bg-white hover:bg-[#FDF8F2] dark:bg-[#161F1B] dark:hover:bg-[#23170D]"
-                    >
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-center font-semibold dark:border-[#3A2717]">
-                        {st.rank}
-                      </td>
-                      <td className="border-b border-[#EFE3D6] px-3 py-2 font-medium dark:border-[#3A2717]">
-                        {st.nama}
-                      </td>
-                      <td className="border-b border-[#EFE3D6] px-3 py-2 text-center text-[#52635C] dark:border-[#3A2717] dark:text-[#9AAAA2]">
-                        {st.kelas}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right font-semibold dark:border-[#3A2717]">
-                        {st.score}/{st.maxScore}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
-                        {st.scorePercent}%
-                      </td>
-                      <td
-                        className={`border-b border-[#EFE3D6] px-3 py-2 font-semibold dark:border-[#3A2717] ${
-                          st.group === 'Unggul'
-                            ? 'bg-[#ECF8F2] text-[#14533C] dark:bg-[#193529] dark:text-[#75DFB5]'
-                            : st.group === 'Asor'
-                              ? 'bg-[#FEE4E2] text-[#912018] dark:bg-[#4A1C1A] dark:text-[#FECACA]'
-                              : 'text-[#52635C] dark:text-[#9AAAA2]'
-                        }`}
-                      >
-                        {st.group === 'Unggul'
-                          ? 'Kelompok Unggul'
-                          : st.group === 'Asor'
-                            ? 'Kelompok Asor'
-                            : 'Tengah'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {/* Anates Tab 3: Unggul Asor — Format Khusus Terpisah */}
+          {anatesTab === 'unggul-asor' &&
+            renderDistinguishedUnggulAsor({
+              rankedStudents: anatesReport.rankedStudents,
+              groupSize: anatesReport.groupSize,
+              scoreHeader: 'Total Skor',
+              engineNote: 'Versi Anates V4',
+            })}
 
           {/* Anates Tab 4: Daya Pembeda (%) */}
           {anatesTab === 'daya-pembeda' && (
@@ -1397,13 +1602,13 @@ export function UraianAnalysisSection({
                       Rata2 Asor (n={anatesReport.groupSize})
                     </th>
                     <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      Beda (U − A)
+                      Selisih (U − A)
                     </th>
                     <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      DP (%)
+                      Daya Pembeda (%)
                     </th>
                     <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-left dark:border-[#4A321C]">
-                      Tafsiran
+                      Kategori
                     </th>
                   </tr>
                 </thead>
@@ -1441,7 +1646,7 @@ export function UraianAnalysisSection({
             </div>
           )}
 
-          {/* Anates Tab 5: Tingkat Kesukaran (%) */}
+          {/* Anates Tab 5: Tingkat Kesulitan (%) */}
           {anatesTab === 'tingkat-kesukaran' && (
             <div className="flex flex-col gap-3">
               <div className="overflow-x-auto rounded-lg border border-[#E5CFB6] dark:border-[#4A321C]">
@@ -1458,10 +1663,10 @@ export function UraianAnalysisSection({
                         Rata-rata
                       </th>
                       <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                        TK (%)
+                        Tingkat Kesulitan (%)
                       </th>
                       <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-left dark:border-[#4A321C]">
-                        Tafsiran 5 Kategori (Anates V4)
+                        Kategori Kesulitan (5 Tingkat)
                       </th>
                     </tr>
                   </thead>
@@ -1492,76 +1697,81 @@ export function UraianAnalysisSection({
                 </table>
               </div>
               <p className="text-xs text-[#52635C] dark:text-[#9AAAA2]">
-                Anates V4 Uraian menghitung TK% = (Rata-rata / Skor Maks) × 100%:
+                Anates V4 Uraian menghitung Tingkat Kesulitan (%) = (Rata-rata / Skor Maks) × 100%:
                 ≤15% Sangat Sukar · 16–30% Sukar · 31–70% Sedang · 71–85% Mudah
                 · &gt;85% Sangat Mudah.
               </p>
             </div>
           )}
 
-          {/* Anates Tab 6: Korelasi & Signifikansi */}
+          {/* Anates Tab 6: Kelayakan Butir (Validitas) */}
           {anatesTab === 'korelasi' && (
-            <div className="overflow-x-auto rounded-lg border border-[#E5CFB6] dark:border-[#4A321C]">
-              <table className="w-max min-w-full border-separate border-spacing-0 text-xs sm:text-sm">
-                <thead>
-                  <tr className="bg-[#F9F2EA] text-xs font-semibold text-[#6B4A2B] dark:bg-[#23170D] dark:text-[#D8B68F]">
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-center dark:border-[#4A321C]">
-                      No Butir
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      Skor Maks
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      Korelasi (r)
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      r Tabel 5%
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
-                      r Tabel 1%
-                    </th>
-                    <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-left dark:border-[#4A321C]">
-                      Signifikansi (Anates V4)
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {anatesReport.items.map((it) => (
-                    <tr
-                      key={it.itemNumber}
-                      className="bg-white hover:bg-[#FDF8F2] dark:bg-[#161F1B] dark:hover:bg-[#23170D]"
-                    >
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-center font-semibold dark:border-[#3A2717]">
-                        {it.itemNumber}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
-                        {it.maxScore}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right font-semibold dark:border-[#3A2717]">
-                        {it.correlationR !== null
-                          ? it.correlationR.toFixed(3)
-                          : '—'}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right text-[#52635C] dark:border-[#3A2717] dark:text-[#9AAAA2]">
-                        {anatesReport.reliability.rTable5?.toFixed(3) ?? '—'}
-                      </td>
-                      <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right text-[#52635C] dark:border-[#3A2717] dark:text-[#9AAAA2]">
-                        {anatesReport.reliability.rTable1?.toFixed(3) ?? '—'}
-                      </td>
-                      <td
-                        className={`border-b border-[#EFE3D6] px-3 py-2 font-semibold dark:border-[#3A2717] ${
-                          it.significance === 'Sangat Signifikan' ||
-                          it.significance === 'Signifikan'
-                            ? 'bg-[#ECF8F2] text-[#14533C] dark:bg-[#193529] dark:text-[#75DFB5]'
-                            : 'bg-[#FEE4E2] text-[#912018] dark:bg-[#4A1C1A] dark:text-[#FECACA]'
-                        }`}
-                      >
-                        {it.significance}
-                      </td>
+            <div className="flex flex-col gap-2.5">
+              <div className="overflow-x-auto rounded-lg border border-[#E5CFB6] dark:border-[#4A321C]">
+                <table className="w-max min-w-full border-separate border-spacing-0 text-xs sm:text-sm">
+                  <thead>
+                    <tr className="bg-[#F9F2EA] text-xs font-semibold text-[#6B4A2B] dark:bg-[#23170D] dark:text-[#D8B68F]">
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-center dark:border-[#4A321C]">
+                        No Butir
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
+                        Skor Maks
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
+                        Skor Kesesuaian (r)
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
+                        Batas Minimal 5%
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-right dark:border-[#4A321C]">
+                        Batas Minimal 1%
+                      </th>
+                      <th className="border-b border-[#E5CFB6] px-3 py-2.5 text-left dark:border-[#4A321C]">
+                        Status Kelayakan
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {anatesReport.items.map((it) => (
+                      <tr
+                        key={it.itemNumber}
+                        className="bg-white hover:bg-[#FDF8F2] dark:bg-[#161F1B] dark:hover:bg-[#23170D]"
+                      >
+                        <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-center font-semibold dark:border-[#3A2717]">
+                          {it.itemNumber}
+                        </td>
+                        <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right dark:border-[#3A2717]">
+                          {it.maxScore}
+                        </td>
+                        <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right font-semibold dark:border-[#3A2717]">
+                          {it.correlationR !== null
+                            ? it.correlationR.toFixed(3)
+                            : '—'}
+                        </td>
+                        <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right text-[#52635C] dark:border-[#3A2717] dark:text-[#9AAAA2]">
+                          {anatesReport.reliability.rTable5?.toFixed(3) ?? '—'}
+                        </td>
+                        <td className="font-mono-tabular border-b border-[#EFE3D6] px-3 py-2 text-right text-[#52635C] dark:border-[#3A2717] dark:text-[#9AAAA2]">
+                          {anatesReport.reliability.rTable1?.toFixed(3) ?? '—'}
+                        </td>
+                        <td
+                          className={`border-b border-[#EFE3D6] px-3 py-2 font-semibold dark:border-[#3A2717] ${
+                            it.significance === 'Sangat Signifikan' ||
+                            it.significance === 'Signifikan'
+                              ? 'bg-[#ECF8F2] text-[#14533C] dark:bg-[#193529] dark:text-[#75DFB5]'
+                              : 'bg-[#FEE4E2] text-[#912018] dark:bg-[#4A1C1A] dark:text-[#FECACA]'
+                          }`}
+                        >
+                          {it.significance}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-[#52635C] dark:text-[#9AAAA2]">
+                Butir dinyatakan <strong>Signifikan / Sangat Signifikan</strong> (layak dipakai) bila skor kesesuaiannya melewati batas minimal standar 5% atau 1%.
+              </p>
             </div>
           )}
 
@@ -1710,7 +1920,7 @@ export function UraianAnalysisSection({
               <dl className="grid grid-cols-2 gap-2 text-xs">
                 <div>
                   <dt className="text-[#7C532B] dark:text-[#C9A47C]">
-                    Belah Dua (Spearman-Brown r₁₁)
+                    Konsistensi Tes Keseluruhan
                   </dt>
                   <dd className="font-mono-tabular text-base font-bold text-[#3D220A] dark:text-[#F6E4CE]">
                     {anatesReport.reliability.spearmanBrownR?.toFixed(3) ?? '—'}{' '}
@@ -1719,22 +1929,22 @@ export function UraianAnalysisSection({
                 </div>
                 <div>
                   <dt className="text-[#7C532B] dark:text-[#C9A47C]">
-                    Signifikansi (5% &amp; 1%)
+                    Kelayakan Butir (5% &amp; 1%)
                   </dt>
                   <dd className="font-mono-tabular text-base font-bold text-[#3D220A] dark:text-[#F6E4CE]">
                     {anatesReport.summaryCounts.significant} /{' '}
-                    {anatesReport.items.length} Signifikan
+                    {anatesReport.items.length} Layak
                   </dd>
                 </div>
                 <div>
                   <dt className="text-[#7C532B] dark:text-[#C9A47C]">
-                    Rumus TK (%)
+                    Cara Hitung Kesulitan
                   </dt>
-                  <dd className="font-semibold">(Mean / Skor Maks) × 100%</dd>
+                  <dd className="font-semibold">(Rata-rata / Skor Maks) × 100%</dd>
                 </div>
                 <div>
                   <dt className="text-[#7C532B] dark:text-[#C9A47C]">
-                    Kesukaran (5 Tingkat)
+                    Tingkat Kesulitan (5 Kategori)
                   </dt>
                   <dd className="font-mono-tabular font-semibold">
                     {anatesReport.summaryCounts.veryEasy} SM ·{' '}
@@ -1798,10 +2008,10 @@ export function UraianAnalysisSection({
                     DP (%)
                   </th>
                   <th className="border-b border-[#E5CFB6] bg-[#FDF8F2] px-3 py-2 text-left dark:border-[#4A321C] dark:bg-[#1E140B]">
-                    Tafsiran TK
+                    Kategori Kesulitan
                   </th>
                   <th className="border-b border-[#E5CFB6] bg-[#FDF8F2] px-3 py-2 text-left dark:border-[#4A321C] dark:bg-[#1E140B]">
-                    Signifikansi
+                    Status Kelayakan
                   </th>
                 </tr>
               </thead>

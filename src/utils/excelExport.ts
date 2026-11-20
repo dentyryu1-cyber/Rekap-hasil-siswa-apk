@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import type { AnswerLetter, StudentRow } from '../types/sheet';
 import { computeStudentStats, normalizeAnswers } from './answerParser';
 import { computeFullItemAnalysis, detectOptionMode } from './itemAnalysis';
+import { buildDistinguishedUnggulAsorAOA } from './unggulAsorFormat';
 
 export interface ExportPayload {
   rows: StudentRow[];
@@ -405,18 +406,34 @@ export function downloadExcelWorkbook(payload: ExportPayload): string {
   }
 
   if (data.groupsSheet) {
-    const wsGroups = XLSX.utils.aoa_to_sheet([
-      data.groupsSheet.headers,
-      ...data.groupsSheet.rows,
-    ]);
+    const optionMode = detectOptionMode(
+      payload.rows,
+      payload.questionCount,
+      payload.answerKey,
+    );
+    const analysis = computeFullItemAnalysis(
+      payload.rows,
+      payload.questionCount,
+      payload.answerKey,
+      optionMode,
+    );
+    const aoa = buildDistinguishedUnggulAsorAOA({
+      rankedStudents: analysis.rankedStudents,
+      groupSize: analysis.groupSize,
+      engineLabel: 'rekapinJx',
+      modeLabel: 'Pilihan Ganda (ABC)',
+      scoreHeader: 'Skor Benar',
+      percentHeader: 'Nilai (%)',
+    });
+    const wsGroups = XLSX.utils.aoa_to_sheet(aoa);
     wsGroups['!cols'] = [
-      { wch: 10 },
-      { wch: 26 },
-      { wch: 10 },
-      { wch: 11 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 19 },
+      { wch: 18 },
+      { wch: 28 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 18 },
+      { wch: 25 },
     ];
     XLSX.utils.book_append_sheet(wb, wsGroups, data.groupsSheet.name);
   }

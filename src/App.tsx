@@ -1039,6 +1039,13 @@ export default function App() {
     );
   }
 
+  function handleUpdateStudent(id: number, nama: string, kelas: string) {
+    setRows((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, nama, kelas } : row)),
+    );
+    setStatusMessage(`Data siswa "${nama}" diperbarui.`);
+  }
+
   function handleUpdateCell(
     id: number,
     questionIdx: number,
@@ -1343,6 +1350,27 @@ export default function App() {
     });
   }
 
+  function handleApplyUraianItemMaxScores(
+    nextScores: number[],
+    nextDefaultMax?: number,
+  ) {
+    const resolvedDefault =
+      typeof nextDefaultMax === 'number' && nextDefaultMax > uraianScaleMin
+        ? nextDefaultMax
+        : uraianDefaultMax;
+    if (typeof nextDefaultMax === 'number' && nextDefaultMax > uraianScaleMin) {
+      setUraianDefaultMax(resolvedDefault);
+    }
+    setUraianItemMaxScores(
+      normalizeMaxScores(
+        nextScores,
+        uraianItemCount,
+        resolvedDefault,
+        uraianScaleMin,
+      ),
+    );
+  }
+
   function handleAddUraianStudent(nama: string, kelas: string) {
     const nextId = uraianSeq + 1;
     const newRow: UraianStudentRow = {
@@ -1442,6 +1470,13 @@ export default function App() {
     setUraianRows((prev) =>
       prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)),
     );
+  }
+
+  function handleUpdateUraianStudent(id: number, nama: string, kelas: string) {
+    setUraianRows((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, nama, kelas } : row)),
+    );
+    setUraianStatusMessage(`Data peserta "${nama}" diperbarui.`);
   }
 
   function handleUpdateUraianCell(
@@ -1854,6 +1889,7 @@ export default function App() {
               onAddStudent={handleAddStudent}
               onAddMultipleStudents={handleAddMultipleStudents}
               onSelectStudent={handleSelectStudent}
+              onUpdateStudent={handleUpdateStudent}
               onRemoveStudent={handleRemoveRow}
               onExportProjectData={handleExportProjectData}
               onImportProjectData={handleImportProjectData}
@@ -1988,9 +2024,11 @@ export default function App() {
               onSelectPresetMode={handleSelectUraianPresetMode}
               onChangeDefaultMaxScore={handleChangeUraianDefaultMax}
               onChangeItemMaxScore={handleChangeUraianItemMax}
+              onApplyItemMaxScores={handleApplyUraianItemMaxScores}
               onAddStudent={handleAddUraianStudent}
               onAddMultipleStudents={handleAddMultipleUraianStudents}
               onSelectStudent={handleSelectUraianStudent}
+              onUpdateStudent={handleUpdateUraianStudent}
               onRemoveStudent={handleRemoveUraianRow}
               onExportProjectData={handleExportUraianProjectData}
               onImportProjectData={handleImportUraianProjectData}

@@ -5,6 +5,7 @@ import {
   FileSpreadsheet,
   FileText,
   Moon,
+  Pencil,
   Search,
   Sun,
   Trash2,
@@ -329,7 +330,7 @@ export function RecapTableSection({
                       </th>
                     </>
                   )}
-                  <th className="sticky right-0 z-20 w-[76px] min-w-[76px] border-b border-l border-[#D4DDD8] bg-[#F4F7F5] px-2 py-2.5 text-center dark:border-[#28362F] dark:bg-[#121916]">
+                  <th className="sticky right-0 z-20 w-[134px] min-w-[134px] border-b border-l border-[#D4DDD8] bg-[#F4F7F5] px-2 py-2.5 text-center dark:border-[#28362F] dark:bg-[#121916]">
                     Aksi
                   </th>
                 </tr>
@@ -380,6 +381,7 @@ export function RecapTableSection({
                           <input
                             type="text"
                             value={row.nama}
+                            data-student-name={row.id}
                             onFocus={() => onSelectStudent(row.id)}
                             onChange={(e) =>
                               onUpdateRowMeta(row.id, 'nama', e.target.value)
@@ -488,15 +490,33 @@ export function RecapTableSection({
                               : 'bg-white dark:bg-[#161F1B]'
                           }`}
                         >
-                          <button
-                            type="button"
-                            onClick={() => onRemoveRow(row.id)}
-                            aria-label={`Hapus ${row.nama}`}
-                            className="inline-flex h-8 cursor-pointer items-center justify-center gap-1 rounded px-2 text-xs font-semibold text-[#B42318] transition-colors hover:bg-[#FEE4E2] dark:text-[#FDA29B] dark:hover:bg-[#3A1E1C]"
-                          >
-                            <X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                            <span>Hapus</span>
-                          </button>
+                          <div className="inline-flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onSelectStudent(row.id);
+                                const el = document.querySelector<HTMLInputElement>(
+                                  `input[data-student-name="${row.id}"]`,
+                                );
+                                el?.focus();
+                                el?.select();
+                              }}
+                              aria-label={`Edit data ${row.nama}`}
+                              className="inline-flex h-8 cursor-pointer items-center justify-center gap-1 rounded px-2 text-xs font-semibold text-[#1B6B4F] transition-colors hover:bg-[#EAF4EF] dark:text-[#58C49B] dark:hover:bg-[#1B3328]"
+                            >
+                              <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onRemoveRow(row.id)}
+                              aria-label={`Hapus ${row.nama}`}
+                              className="inline-flex h-8 cursor-pointer items-center justify-center gap-1 rounded px-2 text-xs font-semibold text-[#B42318] transition-colors hover:bg-[#FEE4E2] dark:text-[#FDA29B] dark:hover:bg-[#3A1E1C]"
+                            >
+                              <X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                              <span>Hapus</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

@@ -16,6 +16,10 @@ import {
   type GroupLabel,
   type RankedStudent,
 } from './itemAnalysis';
+import {
+  buildDistinguishedUnggulAsorAOA,
+  buildDistinguishedUnggulAsorText,
+} from './unggulAsorFormat';
 
 export type UraianAnalysisSectionId =
   | 'rekap'
@@ -262,6 +266,7 @@ export function computeFullUraianAnalysis(
   subMode: SurveySubMode,
   scaleMin: number,
   itemMaxScores: number[],
+  defaultMaxScore?: number,
 ): FullUraianAnalysisReport {
   const N = rows.length;
   const k = itemCount;
@@ -300,10 +305,19 @@ export function computeFullUraianAnalysis(
     };
   }
 
+  const fallbackMax =
+    defaultMaxScore && defaultMaxScore > scaleMin
+      ? defaultMaxScore
+      : subMode === 'angket-4'
+        ? 4
+        : subMode === 'angket-5'
+          ? 5
+          : 10;
+
   const normalizedMax = normalizeMaxScores(
     itemMaxScores,
     k,
-    subMode === 'angket-4' ? 4 : subMode === 'angket-5' ? 5 : 10,
+    fallbackMax,
     scaleMin,
   );
 
@@ -700,7 +714,40 @@ export function downloadUraianExcelWorkbook(payload: {
   appendSheetToWb(wb, preview.mainSheet, 6);
   appendSheetToWb(wb, preview.summarySheet, 26);
   if (preview.analysisSheet) appendSheetToWb(wb, preview.analysisSheet, 12);
-  if (preview.groupsSheet) appendSheetToWb(wb, preview.groupsSheet, 12);
+  if (preview.groupsSheet) {
+    const normMax = normalizeMaxScores(
+      payload.itemMaxScores,
+      payload.itemCount,
+      payload.subMode === 'angket-4' ? 4 : payload.subMode === 'angket-5' ? 5 : 10,
+      payload.scaleMin,
+    );
+    const fullReport = computeFullUraianAnalysis(
+      payload.rows,
+      payload.itemCount,
+      payload.subMode,
+      payload.scaleMin,
+      normMax,
+    );
+    const aoa = buildDistinguishedUnggulAsorAOA({
+      rankedStudents: fullReport.rankedStudents,
+      groupSize: fullReport.groupSize,
+      engineLabel: 'rekapinJx',
+      modeLabel: payload.subMode === 'uraian' ? 'Soal Uraian' : 'Angket / Skala Likert',
+      scoreHeader: 'Total Skor',
+      percentHeader: 'Capaian (%)',
+    });
+    const wsGroups = XLSX.utils.aoa_to_sheet(aoa);
+    wsGroups['!cols'] = [
+      { wch: 18 },
+      { wch: 28 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 18 },
+      { wch: 25 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsGroups, preview.groupsSheet.name);
+  }
 
   const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   const blob = new Blob([buffer], {
@@ -784,22 +831,14 @@ function buildUraianAnalysisAOA(
       return {
         sheetName: 'Kel. Unggul & Asor',
         filePrefix: 'kel-unggul-asor-uraian',
-        aoa: [
-          ['Peringkat', 'Nama', 'Kelas', 'Total Skor', 'Skor Maks', 'Capaian (%)', 'Kelompok (27%)'],
-          ...report.rankedStudents.map((st) => [
-            st.rank,
-            st.nama,
-            st.kelas,
-            st.score,
-            st.maxScore,
-            st.scorePercent,
-            st.group === 'Unggul'
-              ? 'Kelompok Unggul (27% Atas)'
-              : st.group === 'Asor'
-                ? 'Kelompok Asor (27% Bawah)'
-                : 'Kelompok Tengah',
-          ]),
-        ],
+        aoa: buildDistinguishedUnggulAsorAOA({
+          rankedStudents: report.rankedStudents,
+          groupSize: report.groupSize,
+          engineLabel: 'rekapinJx',
+          modeLabel: report.subMode === 'uraian' ? 'Soal Uraian' : 'Angket / Skala Likert',
+          scoreHeader: 'Total Skor',
+          percentHeader: 'Capaian (%)',
+        }),
       };
 
     case 'daya-pembeda':
@@ -922,10 +961,21 @@ export function exportUraianSingleAnalysisExcel(
   const { sheetName, filePrefix, aoa } = buildUraianAnalysisAOA(section, report);
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const colCount = aoa[0]?.length || 1;
-  ws['!cols'] = Array.from({ length: colCount }, (_, i) => ({
-    wch: i === 0 ? 16 : i === 1 ? 22 : 16,
-  }));
-  if (aoa.length > 1) {
+  ws['!cols'] =
+    section === 'unggul-asor'
+      ? [
+          { wch: 18 },
+          { wch: 28 },
+          { wch: 15 },
+          { wch: 15 },
+          { wch: 15 },
+          { wch: 18 },
+          { wch: 25 },
+        ]
+      : Array.from({ length: colCount }, (_, i) => ({
+          wch: i === 0 ? 16 : i === 1 ? 22 : 16,
+        }));
+  if (section !== 'unggul-asor' && aoa.length > 1) {
     ws['!autofilter'] = {
       ref: XLSX.utils.encode_range({
         s: { r: 0, c: 0 },
@@ -962,10 +1012,21 @@ export function exportUraianAllAnalysesExcel(
     const { sheetName, aoa } = buildUraianAnalysisAOA(sec, report);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const colCount = aoa[0]?.length || 1;
-    ws['!cols'] = Array.from({ length: colCount }, (_, i) => ({
-      wch: i === 0 ? 16 : i === 1 ? 22 : 16,
-    }));
-    if (aoa.length > 1) {
+    ws['!cols'] =
+      sec === 'unggul-asor'
+        ? [
+            { wch: 18 },
+            { wch: 28 },
+            { wch: 15 },
+            { wch: 15 },
+            { wch: 15 },
+            { wch: 18 },
+            { wch: 25 },
+          ]
+        : Array.from({ length: colCount }, (_, i) => ({
+            wch: i === 0 ? 16 : i === 1 ? 22 : 16,
+          }));
+    if (sec !== 'unggul-asor' && aoa.length > 1) {
       ws['!autofilter'] = {
         ref: XLSX.utils.encode_range({
           s: { r: 0, c: 0 },
@@ -990,29 +1051,41 @@ export function exportUraianSingleAnalysisText(
   examTitle: string,
 ): string {
   const { sheetName, filePrefix, aoa } = buildUraianAnalysisAOA(section, report);
-  const title = examTitle.trim() || 'Rekap Angket / Uraian';
-  const headerLines = [
-    `LAPORAN ${sheetName.toUpperCase()}`,
-    `Instrumen     : ${title}`,
-    `Peserta (N)   : ${report.reliability.studentCount}`,
-    `Jumlah Butir  : ${report.reliability.itemCount}`,
-    `Tanggal       : ${new Date().toISOString().slice(0, 10)}`,
-    '='.repeat(72),
-    '',
-  ];
-  const colWidths = (aoa[0] || []).map((_, colIdx) =>
-    Math.max(...aoa.map((row) => String(row[colIdx] ?? '').length), 4),
-  );
-  const tableLines = aoa.map((row, rowIdx) => {
-    const line = row
-      .map((cell, cIdx) => String(cell ?? '').padEnd(colWidths[cIdx] + 2))
-      .join('');
-    if (rowIdx === 0) {
-      return `${line}\n${'-'.repeat(Math.min(140, line.length))}`;
-    }
-    return line;
-  });
-  const content = [...headerLines, ...tableLines].join('\r\n');
+  let content = '';
+  if (section === 'unggul-asor') {
+    content = buildDistinguishedUnggulAsorText({
+      rankedStudents: report.rankedStudents,
+      groupSize: report.groupSize,
+      examTitle,
+      engineLabel: 'rekapinJx (Angket / Uraian)',
+      itemCount: report.reliability.itemCount,
+      scoreLabel: 'Skor',
+    });
+  } else {
+    const title = examTitle.trim() || 'Rekap Angket / Uraian';
+    const headerLines = [
+      `LAPORAN ${sheetName.toUpperCase()}`,
+      `Instrumen     : ${title}`,
+      `Peserta (N)   : ${report.reliability.studentCount}`,
+      `Jumlah Butir  : ${report.reliability.itemCount}`,
+      `Tanggal       : ${new Date().toISOString().slice(0, 10)}`,
+      '='.repeat(72),
+      '',
+    ];
+    const colWidths = (aoa[0] || []).map((_, colIdx) =>
+      Math.max(...aoa.map((row) => String(row[colIdx] ?? '').length), 4),
+    );
+    const tableLines = aoa.map((row, rowIdx) => {
+      const line = row
+        .map((cell, cIdx) => String(cell ?? '').padEnd(colWidths[cIdx] + 2))
+        .join('');
+      if (rowIdx === 0) {
+        return `${line}\n${'-'.repeat(Math.min(140, line.length))}`;
+      }
+      return line;
+    });
+    content = [...headerLines, ...tableLines].join('\r\n');
+  }
   const blob = new Blob(['\uFEFF' + content], {
     type: 'text/plain;charset=utf-8',
   });

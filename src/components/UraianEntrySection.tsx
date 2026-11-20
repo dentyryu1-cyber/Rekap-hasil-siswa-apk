@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import type { ScoreValue, UraianStudentRow } from '../types/sheet';
 import {
-  clampScore,
   computeUraianStudentStats,
   countReadableScoreTokens,
   normalizeMaxScores,
@@ -48,7 +47,6 @@ export function UraianEntrySection({
   onFocusAddStudent,
 }: UraianEntrySectionProps) {
   const [bulkText, setBulkText] = useState('');
-  const [customInput, setCustomInput] = useState('');
 
   const normMax = normalizeMaxScores(
     itemMaxScores,
@@ -68,12 +66,8 @@ export function UraianEntrySection({
   const activeMax = normMax[currentItemIdx] ?? defaultMaxScore;
   const currentScore = selectedStudent ? studentScores[currentItemIdx] : null;
 
-  useEffect(() => {
-    setCustomInput(currentScore !== null && currentScore !== undefined ? String(currentScore) : '');
-  }, [currentScore, selectedId, currentItemIdx]);
-
   const quickButtons: number[] = [];
-  if (activeMax - scaleMin <= 10) {
+  if (activeMax - scaleMin <= 15) {
     for (let v = scaleMin; v <= Math.floor(activeMax); v++) {
       quickButtons.push(v);
     }
@@ -93,13 +87,6 @@ export function UraianEntrySection({
     const parsed = parseBulkScores(bulkText, itemCount, scaleMin, normMax);
     onApplyBulkScores(parsed);
     setBulkText('');
-  }
-
-  function handleCustomApply() {
-    if (!selectedStudent) return;
-    const num = Number(customInput.replace(',', '.'));
-    if (!Number.isFinite(num)) return;
-    onSetScore(clampScore(num, scaleMin, activeMax));
   }
 
   return (
@@ -240,40 +227,6 @@ export function UraianEntrySection({
               </button>
             </div>
 
-            {/* Direct decimal/custom numeric entry */}
-            <div className="flex items-center gap-2">
-              <label
-                htmlFor="uraian-custom-score"
-                className="text-xs font-semibold text-[#52635C] dark:text-[#9AAAA2]"
-              >
-                Nilai langsung / desimal:
-              </label>
-              <input
-                id="uraian-custom-score"
-                type="number"
-                step="0.5"
-                min={scaleMin}
-                max={activeMax}
-                value={customInput}
-                onChange={(e) => setCustomInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleCustomApply();
-                  }
-                }}
-                placeholder={`${scaleMin}–${activeMax}`}
-                className="font-mono-tabular h-9 w-24 rounded-lg border border-[#D4DDD8] bg-white px-2.5 text-center text-sm font-semibold text-[#14211C] dark:border-[#28362F] dark:bg-[#101815] dark:text-[#E6EEE9]"
-              />
-              <button
-                type="button"
-                onClick={handleCustomApply}
-                className="btn-gesture btn-surface-secondary h-9 cursor-pointer rounded-xl px-3 text-xs font-semibold"
-              >
-                Terapkan
-              </button>
-            </div>
-
             {/* Bulk score paste */}
             <div className="flex flex-col gap-2 border-t border-[#E3EAE6] pt-3 dark:border-[#24322B]">
               <label
@@ -288,7 +241,7 @@ export function UraianEntrySection({
                   type="text"
                   value={bulkText}
                   onChange={(e) => setBulkText(e.target.value)}
-                  placeholder="Contoh: 4 5 3 4 5 atau 8, 7.5, 9, 10"
+                  placeholder="Contoh: 4 5 3 4 5 atau 8, 7, 9, 10"
                   className="font-mono-tabular h-10 w-full rounded-lg border border-[#D4DDD8] bg-white px-3 text-sm text-[#14211C] dark:border-[#28362F] dark:bg-[#101815] dark:text-[#E6EEE9]"
                 />
                 <button

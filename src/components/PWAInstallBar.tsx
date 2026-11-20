@@ -1,13 +1,36 @@
 import { useState } from 'react';
-import { Download, Smartphone, WifiOff, X } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  Download,
+  ExternalLink,
+  Monitor,
+  WifiOff,
+  X,
+} from 'lucide-react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 
 export function PWAInstallBar() {
-  const { isInstallable, isInstalled, isIOS, isAndroid, install } =
+  const { isInstallable, isInstalled, isIOS, isInIframe, install } =
     usePWAInstall();
   const isOnline = useOnlineStatus();
   const [showGuide, setShowGuide] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
+
+  const currentUrl =
+    typeof window !== 'undefined' ? window.location.href : '';
+
+  async function handleCopyUrl() {
+    if (!currentUrl || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(currentUrl);
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 2000);
+    } catch {
+      setCopiedUrl(false);
+    }
+  }
 
   return (
     <>
@@ -31,7 +54,7 @@ export function PWAInstallBar() {
               className="btn-gesture btn-surface-secondary inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F]"
             >
               <Download className="btn-nudge-up h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>Instal Aplikasi</span>
+              <span>Tambah ke Desktop (Chrome PC)</span>
             </button>
           ) : (
             <button
@@ -39,13 +62,9 @@ export function PWAInstallBar() {
               onClick={() => setShowGuide(true)}
               className="btn-gesture btn-surface-secondary inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F]"
             >
-              <Smartphone className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <Monitor className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span>
-                {isIOS
-                  ? 'Instal di iPhone / iPad'
-                  : isAndroid
-                    ? 'Pasang di Android'
-                    : 'Pasang Aplikasi'}
+                {isIOS ? 'Instal di iPhone / iPad' : 'Jalankan di Chrome PC'}
               </span>
             </button>
           )}
@@ -71,7 +90,7 @@ export function PWAInstallBar() {
               >
                 {isIOS
                   ? 'Instal di iPhone / iPad'
-                  : 'Pasang di Android atau Ekspor APK'}
+                  : 'Jalankan di Chrome PC & Tambah ke Desktop'}
               </h3>
               <button
                 type="button"
@@ -93,32 +112,70 @@ export function PWAInstallBar() {
                   atau atas.
                 </li>
                 <li>
-                  Pilih <strong>Tambahkan ke Layar Utama (Add to Home Screen)</strong>.
+                  Pilih{' '}
+                  <strong>Tambahkan ke Layar Utama (Add to Home Screen)</strong>.
                 </li>
               </ol>
             ) : (
               <div className="mt-3 space-y-3 text-sm text-[#394A43] dark:text-[#B9C7C0]">
                 <p>
-                  Aplikasi ini sudah mendukung <strong>PWA (WebAPK)</strong>{' '}
-                  yang bisa langsung dipasang di HP Android dan dipakai offline:
+                  Aplikasi ini dapat dijalankan langsung lewat{' '}
+                  <strong>Google Chrome di PC / Laptop</strong> dan ditambahkan
+                  sebagai ikon aplikasi di <strong>Desktop</strong>:
                 </p>
-                <ol className="list-decimal space-y-1.5 pl-5">
+
+                {currentUrl && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[#DCE5E0] bg-[#F8FAF9] p-2.5 dark:border-[#28362F] dark:bg-[#101815]">
+                    {isInIframe && (
+                      <a
+                        href={currentUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-gesture btn-surface-primary inline-flex min-h-[34px] cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        <span>Buka di Tab Chrome Baru</span>
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleCopyUrl}
+                      className="btn-gesture btn-surface-secondary inline-flex min-h-[34px] cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold"
+                    >
+                      {copiedUrl ? (
+                        <Check className="h-3.5 w-3.5 shrink-0 text-[#1B6B4F] dark:text-[#58C49B]" aria-hidden="true" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      )}
+                      <span>
+                        {copiedUrl ? 'Link Tersalin' : 'Salin Link Aplikasi'}
+                      </span>
+                    </button>
+                  </div>
+                )}
+
+                <ol className="list-decimal space-y-2 pl-5">
                   <li>
-                    Buka URL aplikasi di <strong>Google Chrome</strong> Android
-                    (di tab baru, bukan di dalam frame pratinjau).
+                    Buka alamat aplikasi di tab utama{' '}
+                    <strong>Google Chrome PC</strong> (bukan di dalam jendela
+                    pratinjau).
                   </li>
                   <li>
-                    Ketuk ikon menu <strong>⋮</strong> di kanan atas, lalu pilih{' '}
-                    <strong>Instal aplikasi</strong> atau{' '}
-                    <strong>Tambahkan ke layar utama</strong>.
+                    Klik ikon <strong>Instal</strong> (layar dengan panah ke
+                    bawah) di ujung kanan kolom alamat Chrome, atau klik menu{' '}
+                    <strong>⋮</strong> →{' '}
+                    <strong>Cast, simpan, dan bagikan</strong> →{' '}
+                    <strong>Instal halaman sebagai aplikasi...</strong> (atau{' '}
+                    <strong>Buat pintasan...</strong>).
+                  </li>
+                  <li>
+                    Centang <strong>Buka sebagai jendela</strong> /{' '}
+                    <strong>Buat pintasan di Desktop</strong> lalu klik{' '}
+                    <strong>Instal</strong>. Ikon aplikasi langsung muncul di{' '}
+                    <strong>Desktop PC</strong> dan bisa dijalankan kapan saja,
+                    termasuk saat offline.
                   </li>
                 </ol>
-                <p className="border-t border-[#E3EAE6] pt-2.5 text-xs text-[#52635C] dark:border-[#24322B] dark:text-[#9AAAA2]">
-                  Untuk file <strong>.apk</strong> terpisah, proyek PWA ini juga
-                  bisa dikemas lewat <strong>PWABuilder</strong> atau{' '}
-                  <strong>Capacitor Android</strong> di komputer dengan Android
-                  SDK.
-                </p>
               </div>
             )}
 

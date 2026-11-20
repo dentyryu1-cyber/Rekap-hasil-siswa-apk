@@ -3,6 +3,10 @@ import type { AnswerLetter, StudentRow } from '../types/sheet';
 import { normalizeAnswers } from './answerParser';
 import { makeSlug, triggerFileDownload } from './excelExport';
 import type { FullItemAnalysisReport } from './itemAnalysis';
+import {
+  buildDistinguishedUnggulAsorAOA,
+  buildDistinguishedUnggulAsorText,
+} from './unggulAsorFormat';
 
 export type AnalysisSectionId =
   | 'rekap'
@@ -118,30 +122,14 @@ function buildAnalysisAOA(
       return {
         sheetName: 'Kel. Unggul & Asor',
         filePrefix: 'kel-unggul-asor',
-        aoa: [
-          [
-            'Peringkat',
-            'Nama Siswa',
-            'Kelas',
-            'Skor Benar',
-            'Skor Maks',
-            'Nilai (%)',
-            'Kelompok (27%)',
-          ],
-          ...report.rankedStudents.map((st) => [
-            st.rank,
-            st.nama,
-            st.kelas,
-            st.score,
-            st.maxScore,
-            st.scorePercent,
-            st.group === 'Unggul'
-              ? 'Kelompok Unggul (27% Atas)'
-              : st.group === 'Asor'
-                ? 'Kelompok Asor (27% Bawah)'
-                : 'Kelompok Tengah',
-          ]),
-        ],
+        aoa: buildDistinguishedUnggulAsorAOA({
+          rankedStudents: report.rankedStudents,
+          groupSize: report.groupSize,
+          engineLabel: 'rekapinJx',
+          modeLabel: 'Pilihan Ganda (ABC)',
+          scoreHeader: 'Skor Benar',
+          percentHeader: 'Nilai (%)',
+        }),
       };
     }
 
@@ -289,10 +277,21 @@ export function exportSingleAnalysisExcel(
   const { sheetName, filePrefix, aoa } = buildAnalysisAOA(section, report);
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const colCount = aoa[0]?.length || 1;
-  ws['!cols'] = Array.from({ length: colCount }, (_, i) => ({
-    wch: i === 0 ? 16 : i === 1 ? 22 : 16,
-  }));
-  if (aoa.length > 1) {
+  ws['!cols'] =
+    section === 'unggul-asor'
+      ? [
+          { wch: 18 },
+          { wch: 28 },
+          { wch: 15 },
+          { wch: 15 },
+          { wch: 15 },
+          { wch: 18 },
+          { wch: 25 },
+        ]
+      : Array.from({ length: colCount }, (_, i) => ({
+          wch: i === 0 ? 16 : i === 1 ? 22 : 16,
+        }));
+  if (section !== 'unggul-asor' && aoa.length > 1) {
     ws['!autofilter'] = {
       ref: XLSX.utils.encode_range({
         s: { r: 0, c: 0 },
@@ -333,10 +332,21 @@ export function exportAllAnalysesExcel(
     const { sheetName, aoa } = buildAnalysisAOA(sec, report);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const colCount = aoa[0]?.length || 1;
-    ws['!cols'] = Array.from({ length: colCount }, (_, i) => ({
-      wch: i === 0 ? 16 : i === 1 ? 22 : 16,
-    }));
-    if (aoa.length > 1) {
+    ws['!cols'] =
+      sec === 'unggul-asor'
+        ? [
+            { wch: 18 },
+            { wch: 28 },
+            { wch: 15 },
+            { wch: 15 },
+            { wch: 15 },
+            { wch: 18 },
+            { wch: 25 },
+          ]
+        : Array.from({ length: colCount }, (_, i) => ({
+            wch: i === 0 ? 16 : i === 1 ? 22 : 16,
+          }));
+    if (sec !== 'unggul-asor' && aoa.length > 1) {
       ws['!autofilter'] = {
         ref: XLSX.utils.encode_range({
           s: { r: 0, c: 0 },
@@ -363,32 +373,46 @@ export function exportSingleAnalysisText(
   examTitle: string,
 ): string {
   const { sheetName, filePrefix, aoa } = buildAnalysisAOA(section, report);
-  const title = examTitle.trim() || 'Rekap Lembar Jawaban';
-  const headerLines = [
-    `LAPORAN ${sheetName.toUpperCase()}`,
-    `Ujian / Mapel : ${title}`,
-    `Peserta (N)   : ${report.reliability.studentCount} siswa`,
-    `Butir Berkunci: ${report.reliability.keyedItemCount} soal`,
-    `Tanggal       : ${new Date().toISOString().slice(0, 10)}`,
-    '='.repeat(72),
-    '',
-  ];
+  let content = '';
 
-  const colWidths = (aoa[0] || []).map((_, colIdx) =>
-    Math.max(...aoa.map((row) => String(row[colIdx] ?? '').length), 4),
-  );
+  if (section === 'unggul-asor') {
+    content = buildDistinguishedUnggulAsorText({
+      rankedStudents: report.rankedStudents,
+      groupSize: report.groupSize,
+      examTitle,
+      engineLabel: 'rekapinJx (Pilihan Ganda ABC)',
+      itemCount: report.reliability.keyedItemCount,
+      scoreLabel: 'Benar',
+    });
+  } else {
+    const title = examTitle.trim() || 'Rekap Lembar Jawaban';
+    const headerLines = [
+      `LAPORAN ${sheetName.toUpperCase()}`,
+      `Ujian / Mapel : ${title}`,
+      `Peserta (N)   : ${report.reliability.studentCount} siswa`,
+      `Butir Berkunci: ${report.reliability.keyedItemCount} soal`,
+      `Tanggal       : ${new Date().toISOString().slice(0, 10)}`,
+      '='.repeat(72),
+      '',
+    ];
 
-  const tableLines = aoa.map((row, rowIdx) => {
-    const line = row
-      .map((cell, cIdx) => String(cell ?? '').padEnd(colWidths[cIdx] + 2))
-      .join('');
-    if (rowIdx === 0) {
-      return `${line}\n${'-'.repeat(Math.min(140, line.length))}`;
-    }
-    return line;
-  });
+    const colWidths = (aoa[0] || []).map((_, colIdx) =>
+      Math.max(...aoa.map((row) => String(row[colIdx] ?? '').length), 4),
+    );
 
-  const content = [...headerLines, ...tableLines].join('\r\n');
+    const tableLines = aoa.map((row, rowIdx) => {
+      const line = row
+        .map((cell, cIdx) => String(cell ?? '').padEnd(colWidths[cIdx] + 2))
+        .join('');
+      if (rowIdx === 0) {
+        return `${line}\n${'-'.repeat(Math.min(140, line.length))}`;
+      }
+      return line;
+    });
+
+    content = [...headerLines, ...tableLines].join('\r\n');
+  }
+
   const blob = new Blob(['\uFEFF' + content], {
     type: 'text/plain;charset=utf-8',
   });
