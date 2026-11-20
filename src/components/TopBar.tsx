@@ -1,19 +1,24 @@
-import { ArrowRight, Download } from 'lucide-react';
+import type { User } from 'firebase/auth';
+import { Download, Settings } from 'lucide-react';
 import type { ActiveLayout } from '../types/sheet';
 import { BrandLogo } from './BrandLogo';
 
 interface TopBarProps {
   activeLayout: ActiveLayout;
   hasRows: boolean;
+  user: User | null;
   onSelectLayout: (layout: ActiveLayout) => void;
   onDownloadExcel: () => void;
+  onOpenSettings: () => void;
 }
 
 export function TopBar({
   activeLayout,
   hasRows,
+  user,
   onSelectLayout,
   onDownloadExcel,
+  onOpenSettings,
 }: TopBarProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-[#D4DDD8] bg-white/95 backdrop-blur-sm dark:border-[#28362F] dark:bg-[#131B17]/95">
@@ -137,11 +142,24 @@ export function TopBar({
           {activeLayout === 'beranda' ? (
             <button
               type="button"
-              onClick={() => onSelectLayout('abc')}
+              onClick={onOpenSettings}
               className="btn-gesture btn-surface-primary inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6B4F]"
             >
-              <span>Mulai Mode ABC</span>
-              <ArrowRight className="btn-nudge-right h-4 w-4 shrink-0" aria-hidden="true" />
+              {user?.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="h-5 w-5 shrink-0 rounded-full border border-white/60 object-cover"
+                />
+              ) : (
+                <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
+              )}
+              <span>
+                {user
+                  ? `Pengaturan · ${(user.displayName || user.email || 'Google').split(' ')[0]}`
+                  : 'Pengaturan'}
+              </span>
             </button>
           ) : (
             <button

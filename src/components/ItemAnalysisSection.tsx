@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart3,
   Download,
+  FileDown,
   FileSpreadsheet,
   FileText,
   Save,
@@ -18,6 +19,7 @@ import {
   detectOptionMode,
   type OptionCountMode,
 } from '../utils/itemAnalysis';
+import { exportAbcWordReport } from '../utils/wordExport';
 
 interface ItemAnalysisSectionProps {
   examTitle: string;
@@ -56,6 +58,7 @@ export function ItemAnalysisSection({
   const [optionMode, setOptionMode] = useState<OptionCountMode>(detectedMode);
   const [manualMode, setManualMode] = useState(false);
   const [exportNotice, setExportNotice] = useState('');
+  const [isExportingWord, setIsExportingWord] = useState(false);
 
   useEffect(() => {
     if (!manualMode) {
@@ -95,6 +98,30 @@ export function ItemAnalysisSection({
     setExportNotice(
       `Buku kerja lengkap 7 analisis disimpan sebagai "${filename}".`,
     );
+  }
+
+  async function handleExportWord() {
+    if (isExportingWord) return;
+    setIsExportingWord(true);
+    try {
+      const filename = await exportAbcWordReport({
+        examTitle,
+        rows,
+        questionCount,
+        answerKey,
+      });
+      setExportNotice(
+        `Laporan Word lengkap (grafik & tabel) disimpan sebagai "${filename}".`,
+      );
+    } catch (error) {
+      setExportNotice(
+        error instanceof Error
+          ? error.message
+          : 'Gagal membuat laporan Word (.docx).',
+      );
+    } finally {
+      setIsExportingWord(false);
+    }
   }
 
   return (
@@ -285,8 +312,21 @@ export function ItemAnalysisSection({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                onClick={handleExportWord}
+                disabled={isExportingWord}
+                className="btn-gesture btn-surface-primary inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap disabled:opacity-60"
+              >
+                <FileDown className="btn-nudge-up h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span>
+                  {isExportingWord
+                    ? 'Membuat Word...'
+                    : 'Unduh Word (.docx) + Grafik'}
+                </span>
+              </button>
+              <button
+                type="button"
                 onClick={handleExportCurrentExcel}
-                className="btn-gesture btn-surface-primary inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+                className="btn-gesture btn-surface-secondary inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
               >
                 <FileSpreadsheet className="btn-nudge-up h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 <span>Simpan Excel Analisis Ini</span>

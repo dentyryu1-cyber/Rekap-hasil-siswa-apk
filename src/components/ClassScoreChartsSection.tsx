@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { BarChart2, Database } from 'lucide-react';
+import { BarChart2, Database, FileDown } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -29,6 +29,8 @@ interface ClassScoreChartsSectionProps {
   hasScoreData: boolean;
   emptyReason: string;
   onLoadSampleData?: () => void;
+  onExportWord?: () => void;
+  isExportingWord?: boolean;
 }
 
 interface ClassAverageDatum {
@@ -171,6 +173,8 @@ export function ClassScoreChartsSection({
   hasScoreData,
   emptyReason,
   onLoadSampleData,
+  onExportWord,
+  isExportingWord = false,
 }: ClassScoreChartsSectionProps) {
   const [metricMode, setMetricMode] = useState<'percent' | 'raw'>('percent');
 
@@ -284,35 +288,48 @@ export function ClassScoreChartsSection({
         </div>
 
         {hasScoreData && students.length > 0 && (
-          <div
-            role="group"
-            aria-label="Satuan grafik rata-rata kelas"
-            className="inline-flex w-fit items-center gap-1 rounded-xl border border-[#D4DDD8] bg-[#EFF3F1] p-1 dark:border-[#28362F] dark:bg-[#111915]"
-          >
-            <button
-              type="button"
-              onClick={() => setMetricMode('percent')}
-              aria-pressed={metricMode === 'percent'}
-              className={`btn-gesture min-h-[32px] cursor-pointer rounded-lg px-3 py-1 text-xs font-semibold whitespace-nowrap transition-colors ${
-                metricMode === 'percent'
-                  ? 'btn-surface-primary'
-                  : 'text-[#394A43] hover:bg-white/75 dark:text-[#C5D3CC] dark:hover:bg-[#1D2923]'
-              }`}
+          <div className="flex flex-wrap items-center gap-2">
+            {onExportWord && (
+              <button
+                type="button"
+                onClick={onExportWord}
+                disabled={isExportingWord}
+                className="btn-gesture btn-surface-primary inline-flex min-h-[38px] cursor-pointer items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap disabled:opacity-60"
+              >
+                <FileDown className="btn-nudge-up h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span>{isExportingWord ? 'Membuat Word...' : 'Unduh Word (.docx)'}</span>
+              </button>
+            )}
+            <div
+              role="group"
+              aria-label="Satuan grafik rata-rata kelas"
+              className="inline-flex w-fit items-center gap-1 rounded-xl border border-[#D4DDD8] bg-[#EFF3F1] p-1 dark:border-[#28362F] dark:bg-[#111915]"
             >
-              Nilai (%)
-            </button>
-            <button
-              type="button"
-              onClick={() => setMetricMode('raw')}
-              aria-pressed={metricMode === 'raw'}
-              className={`btn-gesture min-h-[32px] cursor-pointer rounded-lg px-3 py-1 text-xs font-semibold whitespace-nowrap transition-colors ${
-                metricMode === 'raw'
-                  ? 'btn-surface-primary'
-                  : 'text-[#394A43] hover:bg-white/75 dark:text-[#C5D3CC] dark:hover:bg-[#1D2923]'
-              }`}
-            >
-              Skor Mentah
-            </button>
+              <button
+                type="button"
+                onClick={() => setMetricMode('percent')}
+                aria-pressed={metricMode === 'percent'}
+                className={`btn-gesture min-h-[32px] cursor-pointer rounded-lg px-3 py-1 text-xs font-semibold whitespace-nowrap transition-colors ${
+                  metricMode === 'percent'
+                    ? 'btn-surface-primary'
+                    : 'text-[#394A43] hover:bg-white/75 dark:text-[#C5D3CC] dark:hover:bg-[#1D2923]'
+                }`}
+              >
+                Nilai (%)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMetricMode('raw')}
+                aria-pressed={metricMode === 'raw'}
+                className={`btn-gesture min-h-[32px] cursor-pointer rounded-lg px-3 py-1 text-xs font-semibold whitespace-nowrap transition-colors ${
+                  metricMode === 'raw'
+                    ? 'btn-surface-primary'
+                    : 'text-[#394A43] hover:bg-white/75 dark:text-[#C5D3CC] dark:hover:bg-[#1D2923]'
+                }`}
+              >
+                Skor Mentah
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -1,0 +1,209 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Profil pengguna Google yang terautentikasi beserta preferensi tampilan rekapinJx (akses khusus pemilik).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID milik pengguna.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Alamat email Google terverifikasi milik pengguna.",
+          "maxLength": 200
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Nama tampilan akun Google.",
+          "maxLength": 120
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "URL foto profil akun Google.",
+          "maxLength": 500
+        },
+        "darkMode": {
+          "type": "boolean",
+          "description": "Preferensi tema gelap atau terang."
+        },
+        "buttonStyle": {
+          "type": "string",
+          "enum": ["wood", "tactile", "flat", "glass"],
+          "description": "Gaya permukaan tombol interaktif yang dipilih pengguna."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembuatan dokumen dari server."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembaruan terakhir dari server."
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "displayName",
+        "photoURL",
+        "darkMode",
+        "buttonStyle",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AbcWorkspace": {
+      "title": "AbcWorkspace",
+      "description": "Data lembar jawaban pilihan ganda (ABC), kunci jawaban, dan daftar siswa untuk satu ruang kerja.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID pemilik ruang kerja.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "examTitle": {
+          "type": "string",
+          "description": "Judul ujian atau penilaian pilihan ganda.",
+          "maxLength": 200
+        },
+        "questionCount": {
+          "type": "integer",
+          "description": "Jumlah butir soal pilihan ganda (1 sampai 200)."
+        },
+        "answerKey": {
+          "type": "array",
+          "description": "Daftar kunci jawaban A-E atau kosong per nomor soal (maksimal 200)."
+        },
+        "rows": {
+          "type": "array",
+          "description": "Daftar baris siswa beserta jawaban mereka (maksimal 500 siswa)."
+        },
+        "seq": {
+          "type": "integer",
+          "description": "Penghitung ID berurutan untuk baris siswa baru."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembuatan dokumen dari server."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembaruan terakhir dari server."
+        }
+      },
+      "required": [
+        "ownerId",
+        "examTitle",
+        "questionCount",
+        "answerKey",
+        "rows",
+        "seq",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UraianWorkspace": {
+      "title": "UraianWorkspace",
+      "description": "Data skor angket skala Likert dan soal uraian untuk satu ruang kerja.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID pemilik ruang kerja.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "subMode": {
+          "type": "string",
+          "enum": ["uraian", "angket-4", "angket-5", "custom"],
+          "description": "Jenis instrumen angket atau uraian."
+        },
+        "examTitle": {
+          "type": "string",
+          "description": "Judul angket atau ujian uraian.",
+          "maxLength": 200
+        },
+        "itemCount": {
+          "type": "integer",
+          "description": "Jumlah butir pertanyaan atau pernyataan (1 sampai 100)."
+        },
+        "scaleMin": {
+          "type": "number",
+          "description": "Skor minimum skala penilaian."
+        },
+        "defaultMaxScore": {
+          "type": "number",
+          "description": "Skor maksimum bawaan per butir."
+        },
+        "itemMaxScores": {
+          "type": "array",
+          "description": "Daftar skor maksimum per nomor butir (maksimal 100)."
+        },
+        "rows": {
+          "type": "array",
+          "description": "Daftar responden/siswa beserta skor per butir (maksimal 500)."
+        },
+        "seq": {
+          "type": "integer",
+          "description": "Penghitung ID berurutan untuk baris responden baru."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembuatan dokumen dari server."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembaruan terakhir dari server."
+        }
+      },
+      "required": [
+        "ownerId",
+        "subMode",
+        "examTitle",
+        "itemCount",
+        "scaleMin",
+        "defaultMaxScore",
+        "itemMaxScores",
+        "rows",
+        "seq",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Dokumen profil dan preferensi UI per pengguna Google."
+    },
+    "/users/{userId}/abc_workspaces/{workspaceId}": {
+      "schema": {
+        "$ref": "#/entities/AbcWorkspace"
+      },
+      "description": "Dokumen ruang kerja Pilihan Ganda (ABC) milik pengguna."
+    },
+    "/users/{userId}/uraian_workspaces/{workspaceId}": {
+      "schema": {
+        "$ref": "#/entities/UraianWorkspace"
+      },
+      "description": "Dokumen ruang kerja Angket & Uraian milik pengguna."
+    }
+  }
+}

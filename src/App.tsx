@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { onAuthStateChanged, type User } from 'firebase/auth';
+import { ArrowLeft, Settings } from 'lucide-react';
 import { AnswerEntrySection } from './components/AnswerEntrySection';
 import { ButtonStylePicker } from './components/ButtonStylePicker';
 import {
@@ -17,12 +18,29 @@ import { HomeBerandaSection } from './components/HomeBerandaSection';
 import { ItemAnalysisSection } from './components/ItemAnalysisSection';
 import { PWAInstallBar } from './components/PWAInstallBar';
 import { RecapTableSection } from './components/RecapTableSection';
+import {
+  SettingsModal,
+  type CloudConflictSummary,
+} from './components/SettingsModal';
 import { SplashIntro } from './components/SplashIntro';
 import { TopBar } from './components/TopBar';
 import { UraianAnalysisSection } from './components/UraianAnalysisSection';
 import { UraianConfigAndStudentSection } from './components/UraianConfigAndStudentSection';
 import { UraianEntrySection } from './components/UraianEntrySection';
 import { UraianRecapTableSection } from './components/UraianRecapTableSection';
+import {
+  auth,
+  signInWithGoogle,
+  signOutFromGoogle,
+} from './firebase';
+import {
+  ensureUserProfile,
+  loadCloudUserBundle,
+  saveAbcWorkspaceToCloud,
+  saveUraianWorkspaceToCloud,
+  saveUserPreferencesToCloud,
+  type CloudUserBundle,
+} from './services/cloudSync';
 import type {
   ActiveLayout,
   AnswerLetter,
@@ -59,6 +77,10 @@ import {
   normalizeScores,
   parseUraianProjectDataFile,
 } from './utils/uraianAnalysis';
+import {
+  exportAbcWordReport,
+  exportUraianWordReport,
+} from './utils/wordExport';
 
 const STORAGE_KEY_ABC = 'rekap-lembar-jawaban-v1';
 const STORAGE_KEY_URAIAN = 'rekap-lembar-jawaban-uraian-v1';
@@ -210,6 +232,26 @@ export default function App() {
   const [buttonStyle, setButtonStyle] = useState<ButtonStyleMode>(
     loadInitialButtonStyle,
   );
+
+  // ========================
+  // Google Auth & Cloud Sync State
+  // ========================
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string>('');
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [syncState, setSyncState] = useState<
+    'idle' | 'syncing' | 'synced' | 'error'
+  >('idle');
+  const [syncMessage, setSyncMessage] = useState<string>('');
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [pendingCloudBundle, setPendingCloudBundle] =
+    useState<CloudUserBundle | null>(null);
+  const [isExportingAbcWord, setIsExportingAbcWord] = useState<boolean>(false);
+  const [isExportingUraianWord, setIsExportingUraianWord] =
+    useState<boolean>(false);
+  const hasCheckedInitialCloudRef = useRef<boolean>(false);
+  const skipNextAutoSyncRef = useRef<boolean>(false);
 
   // ========================
   // Layout 2: Pilihan Ganda (ABC) State
@@ -465,6 +507,437 @@ export default function App() {
       setUraianCurrentItemIdx(Math.max(0, uraianItemCount - 1));
     }
   }, [uraianItemCount, uraianCurrentItemIdx]);
+
+  // Keep latest state accessible in auth observer without re-subscribing
+  const latestLocalSnapshotRef = useRef({
+    darkMode,
+    buttonStyle,
+    examTitle,
+    questionCount,
+    answerKey,
+    rows,
+    seq,
+    uraianSubMode,
+    uraianExamTitle,
+    uraianItemCount,
+    uraianScaleMin,
+    uraianDefaultMax,
+    uraianItemMaxScores,
+    uraianRows,
+    uraianSeq,
+  });
+  latestLocalSnapshotRef.current = {
+    darkMode,
+    buttonStyle,
+    examTitle,
+    questionCount,
+    answerKey,
+    rows,
+    seq,
+    uraianSubMode,
+    uraianExamTitle,
+    uraianItemCount,
+    uraianScaleMin,
+    uraianDefaultMax,
+    uraianItemMaxScores,
+    uraianRows,
+    uraianSeq,
+  };
+
+  function applyCloudBundleToLocal(bundle: CloudUserBundle) {
+    skipNextAutoSyncRef.current = true;
+    if (bundle.preferences) {
+      setDarkMode(bundle.preferences.darkMode);
+      setButtonStyle(bundle.preferences.buttonStyle);
+    }
+    if (bundle.abc) {
+      setExamTitle(bundle.abc.examTitle);
+      setQuestionCount(bundle.abc.questionCount);
+      setAnswerKey(bundle.abc.answerKey);
+      setRows(bundle.abc.rows);
+      setSeq(bundle.abc.seq);
+      setSelectedId(bundle.abc.rows[0]?.id ?? null);
+      setCurrentQuestionIdx(
+        bundle.abc.rows[0]
+          ? firstEmptyIndex(
+              bundle.abc.rows[0].jawaban,
+              bundle.abc.questionCount,
+            )
+          : 0,
+      );
+      setLastDeleted(null);
+      setClipboardFallbackText('');
+    }
+    if (bundle.uraian) {
+      setUraianSubMode(bundle.uraian.subMode);
+      setUraianExamTitle(bundle.uraian.examTitle);
+      setUraianItemCount(bundle.uraian.itemCount);
+      setUraianScaleMin(bundle.uraian.scaleMin);
+      setUraianDefaultMax(bundle.uraian.defaultMaxScore);
+      setUraianItemMaxScores(bundle.uraian.itemMaxScores);
+      setUraianRows(bundle.uraian.rows);
+      setUraianSeq(bundle.uraian.seq);
+      setUraianSelectedId(bundle.uraian.rows[0]?.id ?? null);
+      setUraianCurrentItemIdx(
+        bundle.uraian.rows[0]
+          ? firstEmptyScoreIndex(
+              bundle.uraian.rows[0].scores,
+              bundle.uraian.itemCount,
+            )
+          : 0,
+      );
+      setUraianLastDeleted(null);
+      setUraianClipboardFallback('');
+    }
+  }
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
+      setUser(nextUser);
+      setAuthError('');
+
+      if (!nextUser) {
+        hasCheckedInitialCloudRef.current = false;
+        setPendingCloudBundle(null);
+        setSyncState('idle');
+        setSyncMessage('');
+        return;
+      }
+
+      hasCheckedInitialCloudRef.current = false;
+      setSyncState('syncing');
+      setSyncMessage('Memeriksa data tersimpan di akun Google...');
+
+      try {
+        const snap = latestLocalSnapshotRef.current;
+        await ensureUserProfile(nextUser, {
+          darkMode: snap.darkMode,
+          buttonStyle: snap.buttonStyle,
+        });
+
+        const bundle = await loadCloudUserBundle(nextUser.uid);
+        const cloudHasAbc = Boolean(
+          bundle.abc &&
+            (bundle.abc.rows.length > 0 ||
+              bundle.abc.examTitle.trim() !== '' ||
+              bundle.abc.answerKey.some((k) => k !== '')),
+        );
+        const cloudHasUraian = Boolean(
+          bundle.uraian &&
+            (bundle.uraian.rows.length > 0 ||
+              bundle.uraian.examTitle.trim() !== ''),
+        );
+        const localHasAbc =
+          snap.rows.length > 0 ||
+          snap.examTitle.trim() !== '' ||
+          snap.answerKey.some((k) => k !== '');
+        const localHasUraian =
+          snap.uraianRows.length > 0 || snap.uraianExamTitle.trim() !== '';
+
+        if ((cloudHasAbc || cloudHasUraian) && (localHasAbc || localHasUraian)) {
+          setPendingCloudBundle(bundle);
+          setSyncState('idle');
+          setSyncMessage(
+            'Pilih apakah ingin memuat data akun Google atau menyimpan data lokal.',
+          );
+          return;
+        }
+
+        if (cloudHasAbc || cloudHasUraian) {
+          applyCloudBundleToLocal(bundle);
+          hasCheckedInitialCloudRef.current = true;
+          setPendingCloudBundle(null);
+          setSyncState('synced');
+          setLastSyncedAt(new Date().toISOString());
+          setSyncMessage('Data dari akun Google berhasil dimuat.');
+          return;
+        }
+
+        // Cloud empty: upload current local data
+        await saveAbcWorkspaceToCloud(
+          nextUser,
+          { darkMode: snap.darkMode, buttonStyle: snap.buttonStyle },
+          {
+            examTitle: snap.examTitle,
+            questionCount: snap.questionCount,
+            answerKey: snap.answerKey,
+            rows: snap.rows,
+            seq: snap.seq,
+          },
+        );
+        await saveUraianWorkspaceToCloud(
+          nextUser,
+          { darkMode: snap.darkMode, buttonStyle: snap.buttonStyle },
+          {
+            subMode: snap.uraianSubMode,
+            examTitle: snap.uraianExamTitle,
+            itemCount: snap.uraianItemCount,
+            scaleMin: snap.uraianScaleMin,
+            defaultMaxScore: snap.uraianDefaultMax,
+            itemMaxScores: snap.uraianItemMaxScores,
+            rows: snap.uraianRows,
+            seq: snap.uraianSeq,
+          },
+        );
+        hasCheckedInitialCloudRef.current = true;
+        setPendingCloudBundle(null);
+        setSyncState('synced');
+        setLastSyncedAt(new Date().toISOString());
+        setSyncMessage('Data lokal berhasil dicadangkan ke akun Google.');
+      } catch {
+        setSyncState('error');
+        setSyncMessage(
+          'Gagal menghubungkan data ke cloud. Data lokal tetap aman.',
+        );
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Debounced auto-sync when signed in and no conflict is pending
+  useEffect(() => {
+    if (
+      !user ||
+      !hasCheckedInitialCloudRef.current ||
+      pendingCloudBundle !== null
+    ) {
+      return;
+    }
+    if (skipNextAutoSyncRef.current) {
+      skipNextAutoSyncRef.current = false;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setSyncState('syncing');
+        try {
+          await saveUserPreferencesToCloud(user.uid, {
+            darkMode,
+            buttonStyle,
+          });
+          await saveAbcWorkspaceToCloud(
+            user,
+            { darkMode, buttonStyle },
+            {
+              examTitle,
+              questionCount,
+              answerKey,
+              rows,
+              seq,
+            },
+          );
+          await saveUraianWorkspaceToCloud(
+            user,
+            { darkMode, buttonStyle },
+            {
+              subMode: uraianSubMode,
+              examTitle: uraianExamTitle,
+              itemCount: uraianItemCount,
+              scaleMin: uraianScaleMin,
+              defaultMaxScore: uraianDefaultMax,
+              itemMaxScores: uraianItemMaxScores,
+              rows: uraianRows,
+              seq: uraianSeq,
+            },
+          );
+          setSyncState('synced');
+          setLastSyncedAt(new Date().toISOString());
+          setSyncMessage('Tersinkron otomatis ke akun Google');
+        } catch {
+          setSyncState('error');
+          setSyncMessage(
+            'Sinkronisasi otomatis tertunda. Coba simpan manual di Pengaturan.',
+          );
+        }
+      })();
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    user,
+    pendingCloudBundle,
+    darkMode,
+    buttonStyle,
+    examTitle,
+    questionCount,
+    answerKey,
+    rows,
+    seq,
+    uraianSubMode,
+    uraianExamTitle,
+    uraianItemCount,
+    uraianScaleMin,
+    uraianDefaultMax,
+    uraianItemMaxScores,
+    uraianRows,
+    uraianSeq,
+  ]);
+
+  const pendingConflict: CloudConflictSummary | null = useMemo(() => {
+    if (!pendingCloudBundle) return null;
+    return {
+      localAbcCount: rows.length,
+      localUraianCount: uraianRows.length,
+      cloudAbcCount: pendingCloudBundle.abc?.rows.length ?? 0,
+      cloudUraianCount: pendingCloudBundle.uraian?.rows.length ?? 0,
+      cloudUpdatedAtIso:
+        pendingCloudBundle.abc?.updatedAtIso ??
+        pendingCloudBundle.uraian?.updatedAtIso ??
+        null,
+    };
+  }, [pendingCloudBundle, rows.length, uraianRows.length]);
+
+  async function handleSignInGoogle() {
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as { code: unknown }).code)
+          : '';
+      if (code === 'auth/popup-closed-by-user') {
+        setAuthError('Jendela login Google ditutup sebelum selesai.');
+      } else if (code === 'auth/popup-blocked') {
+        setAuthError(
+          'Browser memblokir popup login. Izinkan popup untuk melanjutkan.',
+        );
+      } else {
+        setAuthError(
+          'Gagal masuk dengan akun Google. Periksa koneksi internet Anda.',
+        );
+      }
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleSignOutGoogle() {
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      await signOutFromGoogle();
+    } catch {
+      setAuthError('Gagal keluar dari akun Google.');
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handlePushLocalToCloud() {
+    if (!user) return;
+    setSyncState('syncing');
+    setSyncMessage('Menyimpan seluruh data lokal ke akun Google...');
+    try {
+      await ensureUserProfile(user, { darkMode, buttonStyle });
+      await saveAbcWorkspaceToCloud(
+        user,
+        { darkMode, buttonStyle },
+        {
+          examTitle,
+          questionCount,
+          answerKey,
+          rows,
+          seq,
+        },
+      );
+      await saveUraianWorkspaceToCloud(
+        user,
+        { darkMode, buttonStyle },
+        {
+          subMode: uraianSubMode,
+          examTitle: uraianExamTitle,
+          itemCount: uraianItemCount,
+          scaleMin: uraianScaleMin,
+          defaultMaxScore: uraianDefaultMax,
+          itemMaxScores: uraianItemMaxScores,
+          rows: uraianRows,
+          seq: uraianSeq,
+        },
+      );
+      hasCheckedInitialCloudRef.current = true;
+      setPendingCloudBundle(null);
+      setSyncState('synced');
+      setLastSyncedAt(new Date().toISOString());
+      setSyncMessage('Seluruh data berhasil disimpan ke akun Google.');
+    } catch {
+      setSyncState('error');
+      setSyncMessage('Gagal menyimpan ke akun Google.');
+    }
+  }
+
+  async function handlePullCloudToLocal() {
+    if (!user) return;
+    setSyncState('syncing');
+    setSyncMessage('Mengambil data terbaru dari akun Google...');
+    try {
+      const bundle =
+        pendingCloudBundle ?? (await loadCloudUserBundle(user.uid));
+      applyCloudBundleToLocal(bundle);
+      hasCheckedInitialCloudRef.current = true;
+      setPendingCloudBundle(null);
+      setSyncState('synced');
+      setLastSyncedAt(new Date().toISOString());
+      setSyncMessage('Data akun Google berhasil diterapkan ke perangkat ini.');
+    } catch {
+      setSyncState('error');
+      setSyncMessage('Gagal mengambil data dari akun Google.');
+    }
+  }
+
+  async function handleExportAbcWordFromCharts() {
+    if (isExportingAbcWord) return;
+    setIsExportingAbcWord(true);
+    try {
+      const filename = await exportAbcWordReport({
+        examTitle,
+        rows,
+        questionCount,
+        answerKey,
+      });
+      setStatusMessage(
+        `Laporan Word lengkap (grafik & tabel) "${filename}" berhasil diunduh.`,
+      );
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error
+          ? error.message
+          : 'Gagal membuat laporan Word (.docx).',
+      );
+    } finally {
+      setIsExportingAbcWord(false);
+    }
+  }
+
+  async function handleExportUraianWordFromCharts() {
+    if (isExportingUraianWord) return;
+    setIsExportingUraianWord(true);
+    try {
+      const filename = await exportUraianWordReport({
+        examTitle: uraianExamTitle,
+        rows: uraianRows,
+        itemCount: uraianItemCount,
+        subMode: uraianSubMode,
+        scaleMin: uraianScaleMin,
+        defaultMaxScore: uraianDefaultMax,
+        itemMaxScores: uraianItemMaxScores,
+      });
+      setUraianStatusMessage(
+        `Laporan Word lengkap (grafik & tabel) "${filename}" berhasil diunduh.`,
+      );
+    } catch (error) {
+      setUraianStatusMessage(
+        error instanceof Error
+          ? error.message
+          : 'Gagal membuat laporan Word (.docx).',
+      );
+    } finally {
+      setIsExportingUraianWord(false);
+    }
+  }
 
   function handleNavigateLayout(nextLayout: ActiveLayout) {
     setActiveLayout(nextLayout);
@@ -1292,12 +1765,14 @@ export default function App() {
               ? uraianRows.length > 0
               : true
         }
+        user={user}
         onSelectLayout={handleNavigateLayout}
         onDownloadExcel={
           activeLayout === 'uraian'
             ? handleDownloadUraianExcel
             : handleDownloadExcel
         }
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
       <main className="mx-auto flex max-w-[1280px] flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
@@ -1337,6 +1812,14 @@ export default function App() {
                   >
                     Pindah ke Mode Angket / Uraian
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="btn-gesture btn-surface-secondary inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-semibold whitespace-nowrap"
+                  >
+                    <Settings className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>{user ? 'Akun & Pengaturan' : 'Pengaturan'}</span>
+                  </button>
                 </div>
 
                 <h1 className="text-balance text-2xl font-bold tracking-tight text-[#14211C] sm:text-3xl dark:text-[#E6EEE9]">
@@ -1344,8 +1827,8 @@ export default function App() {
                 </h1>
                 <p className="max-w-2xl text-sm text-[#52635C] sm:text-base dark:text-[#9AAAA2]">
                   Atur jumlah butir soal hingga 200 nomor, masukkan kunci dan
-                  jawaban siswa, unduh Excel (.xlsx), serta lihat 7 hasil olah
-                  data butir soal.
+                  jawaban siswa, unduh Excel (.xlsx) atau Word (.docx), serta
+                  lihat 7 hasil olah data butir soal.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">
@@ -1435,6 +1918,8 @@ export default function App() {
               hasScoreData={abcChartData.hasScoreData}
               emptyReason="Tambahkan siswa dan atur Kunci Jawaban terlebih dahulu agar rata-rata skor per kelas dan distribusi nilai dapat ditampilkan."
               onLoadSampleData={handleLoadSampleData}
+              onExportWord={handleExportAbcWordFromCharts}
+              isExportingWord={isExportingAbcWord}
             />
           </>
         )}
@@ -1459,6 +1944,14 @@ export default function App() {
                   >
                     Pindah ke Mode Pilihan Ganda (ABC)
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="btn-gesture btn-surface-secondary inline-flex min-h-[36px] cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-semibold whitespace-nowrap"
+                  >
+                    <Settings className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>{user ? 'Akun & Pengaturan' : 'Pengaturan'}</span>
+                  </button>
                 </div>
 
                 <h1 className="text-balance text-2xl font-bold tracking-tight text-[#14211C] sm:text-3xl dark:text-[#E6EEE9]">
@@ -1466,8 +1959,8 @@ export default function App() {
                 </h1>
                 <p className="max-w-2xl text-sm text-[#52635C] sm:text-base dark:text-[#9AAAA2]">
                   Kelola skor butir uraian (bobot per nomor) maupun angket skala
-                  Likert (1–4, 1–5), ekspor Excel, dan hitung reliabilitas Alpha
-                  Cronbach hingga validitas butir.
+                  Likert (1–4, 1–5), ekspor Excel atau Word (.docx), dan hitung
+                  reliabilitas Alpha Cronbach hingga validitas butir.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2.5">
@@ -1553,6 +2046,7 @@ export default function App() {
               itemCount={uraianItemCount}
               subMode={uraianSubMode}
               scaleMin={uraianScaleMin}
+              defaultMaxScore={uraianDefaultMax}
               itemMaxScores={uraianItemMaxScores}
               onLoadSampleData={handleLoadSampleUraianData}
               onExportProjectData={handleExportUraianProjectData}
@@ -1566,10 +2060,32 @@ export default function App() {
               hasScoreData={uraianChartData.hasScoreData}
               emptyReason="Tambahkan peserta dan isi minimal satu skor butir agar rata-rata skor per kelas dan distribusi nilai dapat ditampilkan."
               onLoadSampleData={handleLoadSampleUraianData}
+              onExportWord={handleExportUraianWordFromCharts}
+              isExportingWord={isExportingUraianWord}
             />
           </>
         )}
       </main>
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        user={user}
+        authLoading={authLoading}
+        authError={authError}
+        syncState={syncState}
+        syncMessage={syncMessage}
+        lastSyncedAt={lastSyncedAt}
+        pendingConflict={pendingConflict}
+        darkMode={darkMode}
+        buttonStyle={buttonStyle}
+        onClose={() => setIsSettingsOpen(false)}
+        onSignInGoogle={handleSignInGoogle}
+        onSignOut={handleSignOutGoogle}
+        onPushLocalToCloud={handlePushLocalToCloud}
+        onPullCloudToLocal={handlePullCloudToLocal}
+        onToggleDarkMode={() => setDarkMode((d) => !d)}
+        onChangeButtonStyle={setButtonStyle}
+      />
 
       <ExcelPreviewModal
         isOpen={isAbcPreviewOpen}
